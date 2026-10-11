@@ -1,30 +1,12 @@
-# Core Framework
 fastapi==0.104.1
 uvicorn==0.24.0
 python-multipart==0.0.6
-
-# LangChain & AI (pre-built, no compilation needed)
 langchain==0.1.0
 langchain-openai==0.0.3
-
-# Database (use psycopg3 which has pre-built wheels)
-psycopg[binary]==3.1.13
-sqlalchemy==2.0.23
-
-# Twilio (Phone/SMS)
 twilio==9.0.4
-
-# API & HTTP
 httpx==0.25.2
 requests==2.31.0
-
-# Environment
 python-dotenv==1.0.0
 pydantic==2.5.0
-
-# Utilities
 python-dateutil==2.8.2
 pytz==2023.3
-
-# Development
-pytest==7.4.3
