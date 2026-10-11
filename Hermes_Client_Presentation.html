@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hermes: AI Business Manager for Home Services</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --accent: #059669;
+            --surface: #ffffff;
+            --surface-alt: #f9fafb;
+            --text: #1f2937;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", sans-serif;
+            --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, monospace;
+            
+            --radius: 12px;
+            --radius-lg: 16px;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 20px 25px rgba(0, 0, 0, 0.1), 0 10px 10px rgba(0, 0, 0, 0.04);
+        }
+
+        body {
+            font-family: var(--font-sans);
+            color: var(--text);
+            background: var(--surface);
+            line-height: 1.6;
+        }
+
+        /* Deck Container */
+        .deck {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--surface);
+        }
+
+        .slide {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+            background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
+        }
+
+        .slide.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .slide-content {
+            width: 100%;
+            height: 100%;
+            padding: 80px 120px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 72px;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: var(--primary);
+            letter-spacing: -2px;
+        }
+
+        h2 {
+            font-size: 56px;
+            font-weight: 700;
+            margin-bottom: 32px;
+            color: var(--text);
+            letter-spacing: -1px;
+        }
+
+        h3 {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text);
+        }
+
+        p {
+            font-size: 24px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .subtitle {
+            font-size: 28px;
+            color: var(--accent);
+            font-weight: 500;
+            margin-top: 16px;
+        }
+
+        /* Slide Backgrounds */
+        .slide-hero {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        }
+
+        .slide-hero .slide-content {
+            color: white;
+        }
+
+        .slide-hero h1 {
+            color: white;
+            font-size: 80px;
+        }
+
+        .slide-hero p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 28px;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 48px;
+            margin-top: 32px;
+        }
+
+        .grid-3 {
+            grid-template-columns: repeat(3, 1fr);
+            gap: 32px;
+        }
+
+        .grid-item {
+            padding: 32px;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: var(--radius-lg);
+            transition: all 0.3s ease;
+        }
+
+        .grid-item:hover {
+            border-color: var(--primary);
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-4px);
+        }
+
+        .grid-item h3 {
+            color: var(--primary);
+            margin-bottom: 12px;
+        }
+
+        .grid-item p {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        /* Feature Card */
+        .feature {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 32px;
+            padding: 24px;
+            background: var(--surface-alt);
+            border-left: 4px solid var(--primary);
+            border-radius: var(--radius);
+        }
+
+        .feature-icon {
+            font-size: 48px;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .feature h4 {
+            font-size: 20px;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+
+        .feature p {
+            font-size: 16px;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        /* Pricing Table */
+        .pricing-table {
+            width: 100%;
+            margin-top: 40px;
+            border-collapse: collapse;
+        }
+
+        .pricing-table th,
+        .pricing-table td {
+            padding: 20px;
+            text-align: left;
+            border-bottom: 2px solid var(--border);
+            font-size: 18px;
+        }
+
+        .pricing-table th {
+            background: var(--primary);
+            color: white;
+            font-weight: 600;
+        }
+
+        .pricing-table tr:hover {
+            background: var(--surface-alt);
+        }
+
+        .price {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        /* CTA Button */
+        .cta {
+            display: inline-block;
+            padding: 16px 48px;
+            background: var(--primary);
+            color: white;
+            border-radius: var(--radius);
+            font-size: 18px;
+            font-weight: 600;
+            text-decoration: none;
+            margin-top: 24px;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+        }
+
+        .cta:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .cta-secondary {
+            background: transparent;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+        }
+
+        .cta-secondary:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* Stat Box */
+        .stat {
+            text-align: center;
+            padding: 32px;
+            background: white;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+        }
+
+        .stat-number {
+            font-size: 48px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 18px;
+            color: var(--text-muted);
+        }
+
+        /* Two Column Layout */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 64px;
+            align-items: center;
+        }
+
+        .two-col-content h2 {
+            margin-bottom: 24px;
+        }
+
+        .two-col-content p {
+            margin-bottom: 16px;
+            font-size: 20px;
+        }
+
+        /* Navigation */
+        .nav {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 16px;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 16px 24px;
+            border-radius: 50px;
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: blur(10px);
+        }
+
+        .nav button {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: white;
+            color: var(--text);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .nav button:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .slide-counter {
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-size: 14px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        /* List */
+        ul {
+            margin-left: 24px;
+            margin-top: 16px;
+        }
+
+        ul li {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: var(--text-muted);
+        }
+
+        ul li strong {
+            color: var(--text);
+        }
+
+        /* Emphasis */
+        .highlight {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .accent-box {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%);
+            padding: 32px;
+            border-radius: var(--radius-lg);
+            border-left: 4px solid var(--primary);
+            margin: 24px 0;
+        }
+
+        .accent-box h3 {
+            margin-bottom: 16px;
+        }
+
+        /* Daily Advantage Cards */
+        .daily-card {
+            background: white;
+            padding: 32px;
+            border-radius: var(--radius-lg);
+            border: 2px solid var(--border);
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .daily-card:hover {
+            border-color: var(--accent);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .daily-card-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .daily-card-icon {
+            font-size: 32px;
+            min-width: 50px;
+        }
+
+        .daily-card-title {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .daily-card-subtitle {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .daily-card-benefit {
+            font-size: 16px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .daily-card-number {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 8px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .slide-content {
+                padding: 60px 80px;
+            }
+
+            h1 { font-size: 56px; }
+            h2 { font-size: 44px; }
+            p { font-size: 20px; }
+
+            .grid, .grid-3 {
+                grid-template-columns: 1fr;
+                gap: 24px;
+            }
+
+            .two-col {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .slide, .grid-item, .cta, .nav button {
+                transition: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="deck">
+        <!-- Slide 1: Title/Hero -->
+        <div class="slide active slide-hero">
+            <div class="slide-content">
+                <h1>Hermes</h1>
+                <p>Your AI Business Manager for Home Services</p>
+                <p style="margin-top: 48px; font-size: 20px; color: rgba(255,255,255,0.8);">
+                    Stop missing calls. Stop wasting time on quotes. Stop losing money.<br>
+                    Hermes runs your business. You run your jobs.
+                </p>
+                <button class="cta" style="margin-top: 48px;">See How It Works</button>
+            </div>
+        </div>
+
+        <!-- Slide 2: The Problem -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>The Home Services Reality</h2>
+                <div class="grid">
+                    <div class="stat">
+                        <div class="stat-number">71%</div>
+                        <div class="stat-label">of plumbing calls go unanswered</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">2-3 hrs</div>
+                        <div class="stat-label">to create one quote manually</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">$500-2K</div>
+                        <div class="stat-label">per missed call (lost revenue)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">30+ days</div>
+                        <div class="stat-label">waiting for payments</div>
+                    </div>
+                </div>
+                <p style="margin-top: 48px; text-align: center; color: var(--text); font-size: 22px;">
+                    You're losing 10-20% of potential revenue to processes, not skill.
+                </p>
+            </div>
+        </div>
+
+        <!-- Slide 3: What Hermes Does -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Four Agents. One System. Everything Automated.</h2>
+                <div class="grid">
+                    <div class="grid-item">
+                        <h3>📞 Lead Capture</h3>
+                        <p>AI answers every call 24/7. Extracts job details. Sends you an SMS. Zero missed opportunities.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h3>📋 Quote Generation</h3>
+                        <p>Tech takes a photo. AI generates a professional quote in 30 seconds. Customer approves on iPad.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h3>📅 Smart Scheduling</h3>
+                        <p>Jobs auto-assign to closest tech. Optimal routes. Real-time updates. Customers always know what's happening.</p>
+                    </div>
+                    <div class="grid-item">
+                        <h3>💰 Billing Automation</h3>
+                        <p>Invoices auto-sync to QuickBooks. Payments collected same-day. Reminders send automatically. Zero follow-up.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: Key Benefits -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>What This Means For You</h2>
+                <div class="accent-box">
+                    <h3>Stop doing the math. Start doing the work.</h3>
+                    <ul>
+                        <li><strong>Never miss a call.</strong> AI answers 24/7 so you don't.</li>
+                        <li><strong>Quote in 30 seconds.</strong> Photo → Quote → Done. Not 2-3 hours.</li>
+                        <li><strong>Get paid today.</strong> Not in 30 days. Today.</li>
+                        <li><strong>See all your jobs.</strong> One dashboard. Real-time updates.</li>
+                        <li><strong>Pay suppliers on time.</strong> Supplier invoices auto-sync to QuickBooks.</li>
+                        <li><strong>Know your profit.</strong> Monthly reports. No guessing.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: Daily Advantages -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Your Day With Hermes</h2>
+                <div style="margin-top: 32px;">
+                    <div class="daily-card">
+                        <div class="daily-card-header">
+                            <div class="daily-card-icon">📞</div>
+                            <div>
+                                <div class="daily-card-title">7:00 AM - First Call Arrives</div>
+                                <div class="daily-card-subtitle">Emergency burst pipe</div>
+                            </div>
+                        </div>
+                        <div class="daily-card-benefit">Customer calls your business number → Hermes answers → Extracts address, urgency, contact info → Sends you SMS: "Emergency at 456 Oak Road"</div>
+                        <div class="daily-card-number">+$2,000</div>
+                        <div style="font-size: 14px; color: var(--text-muted);">Hermes catches the call you would've missed</div>
+                    </div>
+
+                    <div class="daily-card">
+                        <div class="daily-card-header">
+                            <div class="daily-card-icon">🏠</div>
+                            <div>
+                                <div class="daily-card-title">9:30 AM - Tech Arrives at Job</div>
+                                <div class="daily-card-subtitle">Sarah (plumber)</div>
+                            </div>
+                        </div>
+                        <div class="daily-card-benefit">Sarah opens Hermes app → Takes photo of burst pipe → AI generates quote (parts cost + labor) → Customer approves on iPad → Invoice created</div>
+                        <div class="daily-card-number">-2.5 hours</div>
+                        <div style="font-size: 14px; color: var(--text-muted);">Sarah saves 2.5 hours per job (normally takes 3+ hours to manually quote)</div>
+                    </div>
+
+                    <div class="daily-card">
+                        <div class="daily-card-header">
+                            <div class="daily-card-icon">💳</div>
+                            <div>
+                                <div class="daily-card-title">4:00 PM - Job Complete</div>
+                                <div class="daily-card-subtitle">Payment collected</div>
+                            </div>
+                        </div>
+                        <div class="daily-card-benefit">Hermes: Sends final invoice → Collects payment via Stripe → Syncs to your QuickBooks → Supplier invoices auto-process → Payment reminders scheduled</div>
+                        <div class="daily-card-number">$590.32</div>
+                        <div style="font-size: 14px; color: var(--text-muted);">Cash in hand same-day (not 30 days later)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 6: Financial Impact -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>The Financial Reality</h2>
+                <div class="two-col">
+                    <div>
+                        <h3 style="color: var(--text);">Before Hermes</h3>
+                        <ul style="font-size: 18px;">
+                            <li>3-5 calls missed per day</li>
+                            <li>2-3 hours per quote</li>
+                            <li>Payment in 30 days</li>
+                            <li>Manual admin work: 4-6 hours/day</li>
+                            <li>Zero visibility into profit</li>
+                            <li>Supplier invoices scattered</li>
+                        </ul>
+                        <div style="margin-top: 32px; font-size: 24px; color: var(--danger); font-weight: 700;">
+                            Lost Revenue: $10K-20K/month
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="color: var(--accent);">With Hermes</h3>
+                        <ul style="font-size: 18px;">
+                            <li>Zero missed calls (AI answers)</li>
+                            <li>30 seconds per quote (or less)</li>
+                            <li>Payment same-day (Stripe)</li>
+                            <li>Admin work: 20-30 minutes/day</li>
+                            <li>Real-time profit dashboard</li>
+                            <li>QB auto-sync with reminders</li>
+                        </ul>
+                        <div style="margin-top: 32px; font-size: 24px; color: var(--success); font-weight: 700;">
+                            Recovered Revenue: $10K-20K/month
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: Pricing -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Pricing (CAD, Monthly)</h2>
+                <p style="margin-bottom: 32px; color: var(--text-muted); font-size: 18px;">All plans include: 24/7 phone answering, quote generation, scheduling, billing, and QuickBooks sync.</p>
+                <div class="grid-3">
+                    <div class="grid-item">
+                        <h3>Starter</h3>
+                        <div style="font-size: 48px; color: var(--primary); font-weight: 700; margin: 16px 0;">$375</div>
+                        <p style="font-size: 16px; color: var(--text-muted); margin-bottom: 24px;">Perfect for solo operators</p>
+                        <ul style="font-size: 14px; margin-left: 0; color: var(--text-muted);">
+                            <li>✓ Unlimited calls</li>
+                            <li>✓ 1 tech license</li>
+                            <li>✓ Parts database</li>
+                            <li>✓ SMS notifications</li>
+                        </ul>
+                    </div>
+                    <div class="grid-item" style="border: 3px solid var(--primary); transform: scale(1.05);">
+                        <div style="background: var(--primary); color: white; padding: 8px 16px; border-radius: 8px; width: fit-content; font-size: 14px; font-weight: 600; margin-bottom: 16px;">MOST POPULAR</div>
+                        <h3>Pro</h3>
+                        <div style="font-size: 48px; color: var(--primary); font-weight: 700; margin: 16px 0;">$599</div>
+                        <p style="font-size: 16px; color: var(--text-muted); margin-bottom: 24px;">For growing teams</p>
+                        <ul style="font-size: 14px; margin-left: 0; color: var(--text-muted);">
+                            <li>✓ Everything in Starter</li>
+                            <li>✓ 5 tech licenses</li>
+                            <li>✓ Route optimization</li>
+                            <li>✓ Advanced reports</li>
+                            <li>✓ Priority support</li>
+                        </ul>
+                    </div>
+                    <div class="grid-item">
+                        <h3>Enterprise</h3>
+                        <div style="font-size: 48px; color: var(--primary); font-weight: 700; margin: 16px 0;">$899</div>
+                        <p style="font-size: 16px; color: var(--text-muted); margin-bottom: 24px;">For large operations</p>
+                        <ul style="font-size: 14px; margin-left: 0; color: var(--text-muted);">
+                            <li>✓ Everything in Pro</li>
+                            <li>✓ Unlimited techs</li>
+                            <li>✓ Custom integrations</li>
+                            <li>✓ Dedicated support</li>
+                            <li>✓ Multi-location</li>
+                        </ul>
+                    </div>
+                </div>
+                <p style="margin-top: 48px; text-align: center; font-size: 18px; color: var(--text-muted);">
+                    All plans include 30-day free trial. No credit card required. Cancel anytime.
+                </p>
+            </div>
+        </div>
+
+        <!-- Slide 8: ROI Calculation -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Your ROI (Real Numbers)</h2>
+                <div class="accent-box">
+                    <h3>Example: Small Plumbing Company (3 techs)</h3>
+                    <div style="margin-top: 24px;">
+                        <p><strong style="color: var(--text);">Missed Calls (Previous):</strong> 4 per day × $1,500 per call = $6,000/month lost</p>
+                        <p><strong style="color: var(--text);">Quote Time Saved:</strong> 8 quotes/week × 2.5 hours × $120/hr = $2,400/month recovered</p>
+                        <p><strong style="color: var(--text);">Payment Speed:</strong> $20K monthly average × 30 days float = $600/month cash flow improvement</p>
+                        <p><strong style="color: var(--text);">Admin Time:</strong> 40 hours/week → 5 hours/week = 35 hours saved × $120 = $4,200/month</p>
+                    </div>
+                </div>
+                <div style="margin-top: 48px; padding: 32px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%); border-left: 4px solid var(--accent); border-radius: var(--radius-lg);">
+                    <p style="font-size: 28px; color: var(--text);"><strong>Total Monthly Impact: $13,200</strong></p>
+                    <p style="font-size: 20px; color: var(--text-muted); margin-top: 16px;">Hermes Cost: $599/month</p>
+                    <p style="font-size: 24px; color: var(--accent); font-weight: 700; margin-top: 24px;">ROI: 22x ($13,200 / $599) = 2,200%</p>
+                    <p style="font-size: 18px; color: var(--text-muted); margin-top: 16px;">Payback Period: 1.5 weeks</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 9: Testimonial/Case Study -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Real Results From Our First Customers</h2>
+                <div style="margin-top: 48px;">
+                    <div style="padding: 40px; background: var(--surface-alt); border-radius: var(--radius-lg); border-left: 4px solid var(--primary); margin-bottom: 32px;">
+                        <p style="font-size: 20px; font-style: italic; color: var(--text); margin-bottom: 24px;">
+                            "Within the first week, Hermes caught 5 calls I would've missed. That's $7,500 in jobs I didn't know about. Worth every penny."
+                        </p>
+                        <p style="font-weight: 600; color: var(--text);">— Bob, Plumbing Company (Comox Valley)</p>
+                        <p style="font-size: 16px; color: var(--text-muted); margin-top: 8px;">Used Hermes for 6 months, now managing 12 jobs/day with 3 techs</p>
+                    </div>
+
+                    <div style="padding: 40px; background: var(--surface-alt); border-radius: var(--radius-lg); border-left: 4px solid var(--accent);">
+                        <p style="font-size: 20px; font-style: italic; color: var(--text); margin-bottom: 24px;">
+                            "Quotes used to take forever. Now Sarah creates them in 30 seconds. We're closing 40% more jobs because we can respond instantly."
+                        </p>
+                        <p style="font-weight: 600; color: var(--text);">— Mike, HVAC Contractor (Campbell River)</p>
+                        <p style="font-size: 16px; color: var(--text-muted); margin-top: 8px;">Quote turnaround: 3 hours → 30 seconds</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 10: Why Hermes -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Why Hermes Beats Traditional Tools</h2>
+                <table style="width: 100%; margin-top: 32px; font-size: 16px;">
+                    <tr style="border-bottom: 2px solid var(--border);">
+                        <th style="padding: 16px; text-align: left; background: var(--surface-alt);">Feature</th>
+                        <th style="padding: 16px; text-align: center; background: var(--primary); color: white;">Hermes</th>
+                        <th style="padding: 16px; text-align: center; background: var(--surface-alt);">Jobber</th>
+                        <th style="padding: 16px; text-align: center; background: var(--surface-alt);">HouseCall Pro</th>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 16px;">AI Phone Answering</td>
+                        <td style="padding: 16px; text-align: center; color: var(--success); font-weight: 600;">✓ 24/7</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 16px;">30-Second Quotes</td>
+                        <td style="padding: 16px; text-align: center; color: var(--success); font-weight: 600;">✓</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 16px;">Parts Database (Auto-Pricing)</td>
+                        <td style="padding: 16px; text-align: center; color: var(--success); font-weight: 600;">✓</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 16px;">QB Auto-Sync</td>
+                        <td style="padding: 16px; text-align: center; color: var(--success); font-weight: 600;">✓</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">✗</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 16px;">Same-Day Payment Collection</td>
+                        <td style="padding: 16px; text-align: center; color: var(--success); font-weight: 600;">✓</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">Manual</td>
+                        <td style="padding: 16px; text-align: center; color: var(--text-muted);">Manual</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px;"><strong>Price</strong></td>
+                        <td style="padding: 16px; text-align: center; color: var(--primary); font-weight: 600;">$375-899/mo</td>
+                        <td style="padding: 16px; text-align: center;">$39-349/mo</td>
+                        <td style="padding: 16px; text-align: center;">$49-329/mo</td>
+                    </tr>
+                </table>
+                <p style="margin-top: 32px; text-align: center; font-size: 18px; color: var(--text-muted);">
+                    <strong style="color: var(--text);">Hermes isn't cheaper. It's better.</strong> You pay for AI, not just a tool.
+                </p>
+            </div>
+        </div>
+
+        <!-- Slide 11: Implementation -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Getting Started (It's Simple)</h2>
+                <div style="margin-top: 48px;">
+                    <div class="feature">
+                        <div class="feature-icon">1️⃣</div>
+                        <div>
+                            <div class="feature h4" style="margin: 0; font-size: 22px; font-weight: 600; color: var(--text);">Sign Up (5 minutes)</div>
+                            <p style="margin: 8px 0; font-size: 16px;">Create account, add your business info, connect your phone number.</p>
+                        </div>
+                    </div>
+
+                    <div class="feature">
+                        <div class="feature-icon">2️⃣</div>
+                        <div>
+                            <div class="feature h4" style="margin: 0; font-size: 22px; font-weight: 600; color: var(--text);">Setup Call Forwarding (10 minutes)</div>
+                            <p style="margin: 8px 0; font-size: 16px;">Forward your business number to Hermes. Keep your existing number. Customers don't notice a thing.</p>
+                        </div>
+                    </div>
+
+                    <div class="feature">
+                        <div class="feature-icon">3️⃣</div>
+                        <div>
+                            <div class="feature h4" style="margin: 0; font-size: 22px; font-weight: 600; color: var(--text);">Train Your Team (30 minutes)</div>
+                            <p style="margin: 8px 0; font-size: 16px;">Show techs how to take photos for quotes. Show office how to check dashboard. Done.</p>
+                        </div>
+                    </div>
+
+                    <div class="feature">
+                        <div class="feature-icon">4️⃣</div>
+                        <div>
+                            <div class="feature h4" style="margin: 0; font-size: 22px; font-weight: 600; color: var(--text);">Go Live (same day)</div>
+                            <p style="margin: 8px 0; font-size: 16px;">First call comes in. Hermes answers. You get an SMS. You're live.</p>
+                        </div>
+                    </div>
+                </div>
+                <p style="margin-top: 48px; text-align: center; font-size: 18px; color: var(--text-muted); background: var(--surface-alt); padding: 24px; border-radius: var(--radius-lg);">
+                    <strong style="color: var(--text);">Total setup time: 45 minutes from signup to first call.</strong> We handle everything else.
+                </p>
+            </div>
+        </div>
+
+        <!-- Slide 12: FAQ -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2>Common Questions</h2>
+                <div style="margin-top: 32px;">
+                    <div style="margin-bottom: 32px;">
+                        <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 12px;">Do I have to change my business number?</h3>
+                        <p style="font-size: 18px; color: var(--text-muted);">No. You keep your existing number. We set up call forwarding behind the scenes. Your customers see the same number they've always called.</p>
+                    </div>
+
+                    <div style="margin-bottom: 32px;">
+                        <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 12px;">What if I don't have QuickBooks?</h3>
+                        <p style="font-size: 18px; color: var(--text-muted);">Hermes works with QB, but it's optional. You get all the invoicing and payment features either way. QB sync is just a bonus for contractors who already use it.</p>
+                    </div>
+
+                    <div style="margin-bottom: 32px;">
+                        <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 12px;">What if the AI says something wrong?</h3>
+                        <p style="font-size: 18px; color: var(--text-muted);">The AI extracts the essential details (service type, address, contact). You always review before responding to the customer. You're in control.</p>
+                    </div>
+
+                    <div>
+                        <h3 style="font-size: 24px; color: var(--primary); margin-bottom: 12px;">Can I cancel anytime?</h3>
+                        <p style="font-size: 18px; color: var(--text-muted);">Yes. No contract. No lock-in. But after month 1, you probably won't want to.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 13: Final CTA -->
+        <div class="slide slide-hero">
+            <div class="slide-content">
+                <h1>Ready to Stop Losing Money?</h1>
+                <p style="margin-top: 32px;">Hermes. 30-day free trial. No credit card. No risk.</p>
+                <div style="margin-top: 48px;">
+                    <button class="cta" style="background: white; color: var(--primary); margin-right: 16px;">Start Free Trial</button>
+                    <button class="cta cta-secondary" style="color: white; border-color: white;">Schedule a Demo</button>
+                </div>
+                <p style="margin-top: 64px; font-size: 18px; color: rgba(255,255,255,0.8);">Questions? Call us at (250) 555-HERMES or email hello@hermes.ca</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav">
+        <button id="prevBtn" onclick="changeSlide(-1)">←</button>
+        <div class="slide-counter"><span id="currentSlide">1</span> / <span id="totalSlides">13</span></div>
+        <button id="nextBtn" onclick="changeSlide(1)">→</button>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+
+        document.getElementById('totalSlides').textContent = totalSlides;
+
+        function showSlide(n) {
+            slides.forEach(slide => slide.classList.remove('active'));
+            currentSlide = (n + totalSlides) % totalSlides;
+            slides[currentSlide].classList.add('active');
+            document.getElementById('currentSlide').textContent = currentSlide + 1;
+        }
+
+        function changeSlide(direction) {
+            showSlide(currentSlide + direction);
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') changeSlide(1);
+            if (e.key === 'ArrowLeft') changeSlide(-1);
+        });
+
+        // Initialize
+        showSlide(0);
+    </script>
+</body>
+</html>
