@@ -16,7 +16,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/webhook/call':
             xml = b'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-<Say>Hello from Hermes AI</Say>
+<Say>Hello. This is Hermes.</Say>
 <Hangup/>
 </Response>'''
             self.send_response(200)
@@ -28,9 +28,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
     
     def log_message(self, format, *args):
-        print(f"[{self.address_string()}] {format%args}")
+        pass
 
 if __name__ == '__main__':
     server = HTTPServer(('0.0.0.0', 8000), Handler)
-    print("Server running on port 8000...")
     server.serve_forever()
