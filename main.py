@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 
 from db import db
 from quote_agent import generate_quote, set_quote_status
+from schedule_agent import schedule_job
 
 load_dotenv()
 
@@ -466,6 +467,38 @@ async def update_quote(quote_id: int, status: str):
         return {"success": True, **result}
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
+
+@app.get("/api/technicians")
+async def list_techs(service_type: str = ""):
+    """List active technicians (optionally filtered by specialty)."""
+    techs = db.list_technicians(service_type=service_type)
+    return {"technicians": techs, "count": len(techs)}
+
+@app.post("/api/technicians")
+async def add_tech(name: str, specialties: str = "", phone: str = ""):
+    """Add a technician (specialties comma-separated, e.g. 'plumbing,hvac')."""
+    tech = db.create_technician({
+        "name": name,
+        "specialties": [s.strip() for s in specialties.split(",") if s.strip()],
+        "phone": phone,
+        "max_jobs_per_day": 3,
+    })
+    return {"success": True, "technician": tech}
+
+@app.post("/api/jobs/{job_id}/schedule")
+async def book_job(job_id: int, when: str = "", technician_id: int = 0):
+    """Scheduling Agent: book the best available tech for the job."""
+    try:
+        result = schedule_job(job_id, when=when, technician_id=technician_id)
+        return result
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+@app.get("/api/jobs/{job_id}/appointments")
+async def get_appointments(job_id: int):
+    """Appointments for a job."""
+    appts = db.list_appointments(job_id=job_id)
+    return {"job_id": job_id, "appointments": appts, "count": len(appts)}
 
 # ---------------------------------------------------------------------------
 # Run

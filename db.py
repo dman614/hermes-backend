@@ -237,5 +237,81 @@ class Database:
         return {"avg": sum(amounts) / len(amounts),
                 "min": min(amounts), "max": max(amounts), "samples": len(amounts)}
 
+    # ------------------------------------------------------------------
+    # Technicians
+    # ------------------------------------------------------------------
+    def list_technicians(self, service_type: str = "") -> list:
+        with self.connect() as conn:
+            if service_type:
+                rows = conn.execute(
+                    "SELECT * FROM technicians WHERE is_active = TRUE AND %s = ANY(specialties)",
+                    (service_type,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM technicians WHERE is_active = TRUE").fetchall()
+        return [self._serialize(r) for r in rows]
+
+    def create_technician(self, tech: dict) -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO technicians (name, specialties, phone, max_jobs_per_day)
+                VALUES (%s, %s, %s, %s) RETURNING id, name, specialties, phone
+                """,
+                (tech["name"], tech.get("specialties", []),
+                 tech.get("phone"), tech.get("max_jobs_per_day", 3)),
+            ).fetchone()
+        return self._serialize(row)
+
+    def count_technician_appointments(self, technician_id: int, on_date: str) -> int:
+        """How many appointments a technician already has on a date (yyyy-mm-dd)."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM appointments
+                WHERE technician_id = %s
+                  AND scheduled_at::date = %s::date
+                  AND status != 'cancelled'
+                """,
+                (technician_id, on_date),
+            ).fetchone()
+        return int(row["n"])
+
+    # ------------------------------------------------------------------
+    # Appointments
+    # ------------------------------------------------------------------
+    def create_appointment(self, appt: dict) -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO appointments (job_id, technician_id, scheduled_at,
+                                          customer_address, status)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, job_id, technician_id, scheduled_at, status
+                """,
+                (appt["job_id"], appt.get("technician_id"),
+                 appt["scheduled_at"], appt.get("customer_address"),
+                 appt.get("status", "scheduled")),
+            ).fetchone()
+        return self._serialize(row)
+
+    def list_appointments(self, job_id: int = 0, technician_id: int = 0) -> list:
+        with self.connect() as conn:
+            sql = "SELECT * FROM appointments"
+            params = []
+            clauses = []
+            if job_id:
+                clauses.append("job_id = %s")
+                params.append(job_id)
+            if technician_id:
+                clauses.append("technician_id = %s")
+                params.append(technician_id)
+            if clauses:
+                sql += " WHERE " + " AND ".join(clauses)
+            sql += " ORDER BY scheduled_at"
+            rows = conn.execute(sql, params).fetchall()
+        return [self._serialize(r) for r in rows]
+
 
 db = Database()
