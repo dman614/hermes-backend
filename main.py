@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -394,6 +394,11 @@ async def handle_recording(request: Request):
 @app.get("/")
 async def root():
     return {"message": "Hermes is running!", "version": "0.2.0"}
+
+@app.get("/dashboard")
+async def dashboard():
+    """Owner dashboard (single-file UI listing jobs + drive the flow)."""
+    return FileResponse("dashboard.html")
 
 @app.get("/health")
 async def health_check():

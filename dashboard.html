@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comox Valley Home Services — Owner Dashboard</title>
+<style>
+  :root { --accent:#2f6fed; --bg:#0f1115; --card:#171a21; --line:#262b36;
+          --text:#e8eaed; --muted:#9aa3b2; --ok:#2ecc71; --warn:#f39c12; --bad:#e74c3c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:18px 24px; border-bottom:1px solid var(--line);
+           display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; margin:0; }
+  header .pill { font-size:12px; color:var(--muted); }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+           gap:12px; margin-bottom:24px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:14px 16px; }
+  .stat b { display:block; font-size:22px; }
+  .stat span { color:var(--muted); font-size:12px; }
+  .job { background:var(--card); border:1px solid var(--line); border-radius:12px;
+         padding:16px 18px; margin-bottom:14px; }
+  .job .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .job h3 { margin:0; font-size:16px; }
+  .job .meta { color:var(--muted); font-size:13px; margin-top:6px; }
+  .job .meta span { margin-right:14px; }
+  .badge { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .badge.emergency { background:rgba(231,76,60,.15); color:var(--bad); }
+  .badge.routine { background:rgba(46,204,113,.15); color:var(--ok); }
+  .badge.scheduling { background:rgba(243,156,18,.15); color:var(--warn); }
+  .badge.status { background:rgba(47,111,237,.15); color:var(--accent); }
+  .actions { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px;
+           padding:8px 14px; font-size:13px; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  .empty { color:var(--muted); text-align:center; padding:40px 0; }
+  .db { display:inline-block; width:8px; height:8px; border-radius:50%;
+        background:var(--ok); vertical-align:middle; margin-right:6px; }
+  .db.off { background:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠️ Comox Valley Home Services — Owner Dashboard</h1>
+  <div class="pill"><span id="db-dot" class="db"></span><span id="db-label">checking DB…</span></div>
+</header>
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+  <div id="jobs"></div>
+</div>
+<script>
+const API = ""; // same origin
+
+async function j(url, opts) {
+  const r = await fetch(url, opts);
+  return r.json();
+}
+
+async function load() {
+  const health = await j(API + "/health");
+  const dot = document.getElementById("db-dot");
+  // health doesn't expose DB; probe /api/jobs instead
+  const jobsResp = await j(API + "/api/jobs?limit=50");
+  const jobs = jobsResp.jobs || [];
+  document.getElementById("db-label").textContent =
+    jobsResp.database ? "PostgreSQL connected" : "DB offline (keyword mode)";
+  dot.className = "db" + (jobsResp.database ? "" : " off");
+
+  const counts = { incoming:0, scheduled:0, invoiced:0, paid:0, total:jobs.length };
+  jobs.forEach(x => { if (counts[x.status] !== undefined) counts[x.status]++; });
+  document.getElementById("stats").innerHTML = Object.entries(counts)
+    .filter(([k]) => k !== "total")
+    .map(([k,v]) => `<div class="stat"><b>${v}</b><span style="text-transform:capitalize">${k}</span></div>`)
+    .join("") + `<div class="stat"><b>${counts.total}</b><span>total jobs</span></div>`;
+
+  const box = document.getElementById("jobs");
+  if (!jobs.length) { box.innerHTML = `<div class="empty">No jobs yet. Call the Twilio number and it will show up here.</div>`; return; }
+
+  box.innerHTML = "";
+  for (const job of jobs) {
+    const card = document.createElement("div");
+    card.className = "job";
+    card.innerHTML = `
+      <div class="top">
+        <h3>${job.customer_name || "Caller"} — ${job.service_type || "unknown"}</h3>
+        <div><span class="badge ${job.urgency||"routine"}">${job.urgency||"unknown"}</span>
+              <span class="badge status">${job.status}</span></div>
+      </div>
+      <div class="meta">
+        <span>📞 ${job.customer_phone || "—"}</span>
+        <span>📍 ${job.customer_address || "—"}</span>
+        <span>💰 ${job.quote_amount ? "$" + job.quote_amount : "no quote"}</span>
+      </div>
+      <div class="meta">${job.problem_description || ""}</div>
+      <div class="actions" data-job="${job.id}"></div>`;
+    box.appendChild(card);
+    wireActions(card, job);
+  }
+}
+
+function wireActions(card, job) {
+  const el = card.querySelector(".actions");
+  const btns = [];
+  if (job.status === "incoming") {
+    btns.push(['Generate quote', async () => {
+      const r = await j(`${API}/api/jobs/${job.id}/quotes`, { method:"POST" });
+      alert(r.success ? `Quote ready: $${r.quote.breakdown.total_with_tax}` : r.error);
+      load();
+    }]);
+  }
+  const hasQuote = job.quote_amount != null;
+  if (hasQuote && (job.status === "incoming" || job.status === "quote_sent")) {
+    btns.push(['Approve & send', async () => {
+      // find latest quote id
+      const q = await j(`${API}/api/jobs/${job.id}/quotes`);
+      const qid = q.quotes[0]?.id;
+      if (!qid) return;
+      await j(`${API}/api/quotes/${qid}/status?status=sent`, { method:"POST" });
+      load();
+    }]);
+  }
+  if (job.status === "quote_sent" || job.status === "scheduled") {
+    btns.push(['Schedule', async () => {
+      const when = prompt("Date (YYYY-MM-DD), default tomorrow:", "");
+      const r = await j(`${API}/api/jobs/${job.id}/schedule?when=${encodeURIComponent(when||"")}`, { method:"POST" });
+      alert(r.success ? `Booked with ${r.technician.name}` : r.message || r.error);
+      load();
+    }]);
+  }
+  if (job.status === "scheduled" || job.status === "invoiced") {
+    btns.push(['Invoice', async () => {
+      const r = await j(`${API}/api/jobs/${job.id}/invoice`, { method:"POST" });
+      alert(r.success ? `Invoice #${r.invoice.id}: $${r.amount}` : r.error);
+      load();
+    }]);
+  }
+  if (job.status === "invoiced") {
+    btns.push(['Mark paid', async () => {
+      const inv = (await j(`${API}/api/jobs/${job.id}/quotes`)).quotes[0];
+      // get invoice id via jobs list; simplest: re-invoice endpoint returns id
+      const r = await j(`${API}/api/jobs/${job.id}/invoice`, { method:"POST" });
+      if (r.invoice) { await j(`${API}/api/invoices/${r.invoice.id}/pay`, { method:"POST" }); }
+      load();
+    }]);
+  }
+  if (!btns.length) btns.push(['Refresh', () => load()]);
+  btns.forEach(([label, fn]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.className = label === "Refresh" ? "ghost" : "";
+    b.onclick = fn;
+    el.appendChild(b);
+  });
+}
+
+load();
+setInterval(load, 20000); // poll like a live dashboard
+</script>
+</body>
+</html>
