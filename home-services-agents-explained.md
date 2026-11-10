@@ -515,31 +515,32 @@ bot = HomeSrvicesPlatform(
 
 ## Part 5: What You'll Build (MVP - 4 Weeks)
 
-### Week 1-2: Lead Capture Agent
-- [ ] Twilio voice integration (receive calls)
-- [ ] OpenAI Realtime API (AI listens & speaks)
-- [ ] Extract job details (intent, address, urgency)
-- [ ] Store in PostgreSQL
-- [ ] Dashboard notification to owner
+### Week 1-2: Lead Capture Agent ✅ DONE
+- [x] Twilio voice integration (receive calls) — **(778) 909-4293** → `POST /webhook/call`
+- [x] Caller hears greeting, records message, Twilio transcription posts back
+- [x] Extract job details (intent, address, urgency, name) — Anthropic Claude (`claude-sonnet-4-5`), keyword fallback
+- [x] Store in PostgreSQL — `jobs` table (central hub)
+- [x] Dashboard notification to owner — `/dashboard` live with auto-refresh
 
-### Week 3: Quote Generation Agent
-- [ ] Lookup pricing history
-- [ ] Estimate labor hours
-- [ ] Calculate cost breakdown
-- [ ] Generate PDF quote
-- [ ] Owner approval on dashboard
+### Week 3: Quote Generation Agent ✅ DONE
+- [x] Lookup pricing history — `pricing_history()` from completed jobs
+- [x] Estimate labor hours — complexity-keyword model per service type
+- [x] Calculate cost breakdown — labor @ $95/h + parts + $75 dispatch + GST
+- [x] Generate quote — stored in `quotes` table, shown on dashboard
+- [x] Owner approval on dashboard — draft → approved → sent / rejected
 
-### Week 4: Scheduling Agent
-- [ ] Get available technicians
-- [ ] Select best tech (closest, highest rated)
-- [ ] Create appointment
-- [ ] Send SMS to customer & tech
-- [ ] Show on owner dashboard
+### Week 4: Scheduling Agent ✅ DONE
+- [x] Get available technicians — active + qualified + under daily cap
+- [x] Select best tech — least-loaded (distance scoring ready when geodata added)
+- [x] Create appointment — `appointments` table
+- [x] Show on owner dashboard
+- [ ] Send SMS to customer & tech — Twilio Messaging not wired yet (logged)
 
-### Bonus (if time): Billing Agent
-- [ ] Invoice generation
-- [ ] Payment tracking
-- [ ] Follow-up reminders
+### Bonus: Billing Agent ✅ DONE (core)
+- [x] Invoice generation — from approved quote amount
+- [x] Payment tracking — `paid` status + amount + timestamp
+- [x] Follow-up reminders — overdue sweep API (`/api/followups/run`)
+- [ ] Stripe payment links / real SMS reminders — integration point
 
 ---
 
@@ -547,30 +548,28 @@ bot = HomeSrvicesPlatform(
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **Frontend** | Next.js + React | Dashboard for owner (approve quotes, schedule, see jobs) |
+| **Frontend** | HTML/JS single-page dashboard (`/dashboard`) | Owner: approve quotes, schedule, see jobs (Next.js later) |
 | **API** | FastAPI (Python) | Backend server that runs agents |
-| **AI Agent** | LangChain + GPT-4 | Decision-making for each agent |
-| **Voice** | Twilio + OpenAI Realtime | Phone calls (lead capture) |
-| **Database** | PostgreSQL | Central hub for all data |
-| **SMS/Email** | Twilio | Notifications to customer & tech |
-| **Payments** | Stripe | Invoice payment processing |
-| **Storage** | AWS S3 | Store PDFs (quotes, invoices) |
+| **AI Agent** | Anthropic Claude (via SDK) + keyword fallback | Extraction & decision-making for each agent |
+| **Voice** | Twilio voice + transcription | Phone calls (lead capture); Realtime API later |
+| **Database** | PostgreSQL (Render free tier) | Central hub for all data |
+| **SMS/Email** | Twilio Messaging (not wired yet) | Notifications to customer & tech |
+| **Payments** | Manual tracking (Stripe later) | Invoice payment processing |
+| **Storage** | Postgres (PDFs/docs later) | Quotes & invoices (currently rows, PDF export later) |
 
 ---
 
 ## Next Steps
 
-1. **Understand the concept** (what you just read)
-2. **Start coding Lead Capture Agent** (Week 1)
-   - I'll show you exact FastAPI + LangChain code
-   - We'll integrate Twilio voice
-   - Get it working end-to-end
-3. **Build owner dashboard** (Week 2)
-   - React components
-   - Real-time updates
-   - Approval buttons
-4. **Add Quote Agent** (Week 3)
-5. **Add Scheduling Agent** (Week 4)
+1. **Live status:** The full MVP documented above is **built and deployed**:
+   - Lead Capture (Twilio → Claude extraction → Postgres) — call (778) 909-4293
+   - Quotes, Scheduling, Billing — all live behind the owner dashboard at
+     `https://hermes-backend-8j16.onrender.com/dashboard`
+2. **Hardening (next):** SMS confirmations (Twilio Messaging), Stripe payment
+   links, PDF quote/invoice export, distance-based tech selection, auth on the
+   dashboard, and the local-server deployment for business owners.
+3. **Scale path:** when you move off Render, the same code runs on the
+   2-CPU server — only `DATABASE_URL` and the host change.
 
 ---
 
@@ -597,6 +596,16 @@ bot = HomeSrvicesPlatform(
 = **5 minutes owner time**
 
 **That's the value prop.**
+
+---
+
+## Status (Nov 2026): All four agents are built and live on Render
+
+- **Lead Capture**: call (778) 909-4293 → Twilio → Anthropic Claude extraction → PostgreSQL
+- **Quote, Scheduling, Billing**: live endpoints + owner dashboard at `/dashboard`
+- Try the whole flow: POST `/api/test/transcript` → `/api/jobs/{id}/quotes` →
+  `/api/quotes/{id}/status?status=sent` → `/api/jobs/{id}/schedule` →
+  `/api/jobs/{id}/invoice` → `/api/invoices/{id}/pay`
 
 ---
 
