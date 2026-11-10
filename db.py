@@ -179,5 +179,63 @@ class Database:
                 d[k] = v.isoformat()
         return d
 
+    # ------------------------------------------------------------------
+    # Quotes
+    # ------------------------------------------------------------------
+    def create_quote(self, quote: dict) -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO quotes (job_id, labor_cost, parts_cost, dispatch_fee,
+                                    tax, total, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, job_id, total, status, created_at
+                """,
+                (
+                    quote["job_id"],
+                    quote.get("labor_cost", 0),
+                    quote.get("parts_cost", 0),
+                    quote.get("dispatch_fee", 0),
+                    quote.get("tax", 0),
+                    quote.get("total", 0),
+                    quote.get("status", "draft"),
+                ),
+            ).fetchone()
+        return self._serialize(row)
+
+    def get_quote(self, quote_id: int) -> dict:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM quotes WHERE id = %s", (quote_id,)).fetchone()
+        return self._serialize(row) if row else {}
+
+    def get_quotes_for_job(self, job_id: int) -> list:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM quotes WHERE job_id = %s ORDER BY created_at DESC", (job_id,)
+            ).fetchall()
+        return [self._serialize(r) for r in rows]
+
+    def update_quote_status(self, quote_id: int, status: str) -> bool:
+        with self.connect() as conn:
+            cur = conn.execute("UPDATE quotes SET status = %s WHERE id = %s",
+                               (status, quote_id))
+            return cur.rowcount > 0
+
+    def pricing_history(self, service_type: str) -> dict:
+        """Average/min/max totals for completed jobs of a service type."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT quote_amount FROM jobs
+                WHERE service_type = %s AND status = 'completed' AND quote_amount IS NOT NULL
+                """,
+                (service_type,),
+            ).fetchall()
+        amounts = [float(r["quote_amount"]) for r in rows]
+        if not amounts:
+            return {"avg": None, "min": None, "max": None, "samples": 0}
+        return {"avg": sum(amounts) / len(amounts),
+                "min": min(amounts), "max": max(amounts), "samples": len(amounts)}
+
 
 db = Database()

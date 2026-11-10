@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from db import db
+from quote_agent import generate_quote, set_quote_status
 
 load_dotenv()
 
@@ -441,6 +442,30 @@ async def list_jobs(status: str = "", limit: int = 50):
     """List captured leads/jobs from PostgreSQL."""
     jobs = db.list_jobs(limit=limit, status=status)
     return {"jobs": jobs, "count": len(jobs), "database": db.available}
+
+@app.post("/api/jobs/{job_id}/quotes")
+async def create_quote(job_id: int, parts_cost: float = 0):
+    """Quote Generation Agent: build a quote for a captured job."""
+    try:
+        quote = generate_quote(job_id, parts_cost=parts_cost)
+        return {"success": True, "quote": quote}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+@app.get("/api/jobs/{job_id}/quotes")
+async def get_quotes(job_id: int):
+    """List quotes for a job."""
+    quotes = db.get_quotes_for_job(job_id)
+    return {"job_id": job_id, "quotes": quotes, "count": len(quotes)}
+
+@app.post("/api/quotes/{quote_id}/status")
+async def update_quote(quote_id: int, status: str):
+    """Owner approval: set draft -> approved -> sent, or rejected."""
+    try:
+        result = set_quote_status(quote_id, status)
+        return {"success": True, **result}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
 
 # ---------------------------------------------------------------------------
 # Run
