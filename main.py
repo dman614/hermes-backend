@@ -27,27 +27,42 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("hermes")
 
 # ---------------------------------------------------------------------------
-# LangChain (optional — the agent works without it)
-# ---------------------------------------------------------------------------
-LANGCHAIN_AVAILABLE = False
-try:
-    from langchain_openai import ChatOpenAI
-    from langchain.agents import create_tool_calling_agent, AgentExecutor
-    from langchain.tools import tool
-    from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-    LANGCHAIN_AVAILABLE = True
-except ImportError:
-    log.warning("LangChain not installed — running in keyword-extraction mode")
-
-    # Provide a no-op @tool decorator so the rest of the file parses
-    def tool(fn):
-        return fn
-
-# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 PORT = int(os.getenv("PORT", "8000"))
+
+# ---------------------------------------------------------------------------
+# LLM (optional — the agent works without it; Anthropic or OpenAI)
+# ---------------------------------------------------------------------------
+LLM_AVAILABLE = False
+client = None
+
+if ANTHROPIC_API_KEY:
+    try:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        LLM_AVAILABLE = True
+        log.info("LLM: Anthropic client ready")
+    except ImportError:
+        log.warning("anthropic SDK not installed — checking OpenAI")
+    except Exception as exc:
+        log.warning("Anthropic init failed: %s — checking OpenAI", exc)
+
+if not LLM_AVAILABLE and OPENAI_API_KEY:
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        LLM_AVAILABLE = True
+        log.info("LLM: OpenAI client ready")
+    except ImportError:
+        log.warning("OpenAI SDK not installed — running in keyword mode")
+    except Exception as exc:
+        log.warning("OpenAI init failed: %s — running in keyword mode", exc)
+
+if not LLM_AVAILABLE:
+    log.info("No LLM key — running in keyword-extraction mode")
 
 # Base URL for this server (used in TwiML action URLs)
 BASE_URL = os.getenv("BASE_URL", "")  # e.g. https://hermes-backend-8j16.onrender.com
@@ -87,7 +102,6 @@ class AgentResponse(BaseModel):
 # Extraction helpers (used by both LLM and keyword paths)
 # ---------------------------------------------------------------------------
 
-@tool
 def classify_service_type(transcript: str) -> str:
     """Classify the service needed from the caller's words."""
     t = transcript.lower()
@@ -99,7 +113,6 @@ def classify_service_type(transcript: str) -> str:
         return "electrical"
     return "unknown"
 
-@tool
 def assess_urgency(transcript: str) -> str:
     """Assess if this is an emergency, routine, or scheduling request."""
     t = transcript.lower()
@@ -111,7 +124,6 @@ def assess_urgency(transcript: str) -> str:
         return "scheduling"
     return "routine"
 
-@tool
 def extract_contact_info(transcript: str, phone: str) -> dict:
     """Extract customer contact info from the transcript."""
     return {
@@ -120,7 +132,6 @@ def extract_contact_info(transcript: str, phone: str) -> dict:
         "address": "(address not yet extracted)",
     }
 
-@tool
 def save_lead_to_database(job_details: dict) -> dict:
     """Save the extracted lead. (Placeholder — Week 2: PostgreSQL.)"""
     job_id = f"JOB-{datetime.now().timestamp():.0f}"
@@ -137,22 +148,12 @@ def save_lead_to_database(job_details: dict) -> dict:
 
 class LeadCaptureAgent:
     def __init__(self):
-        self.llm = None
-        if LANGCHAIN_AVAILABLE and OPENAI_API_KEY:
-            try:
-                self.llm = ChatOpenAI(
-                    api_key=OPENAI_API_KEY,
-                    model="gpt-4-turbo",
-                    temperature=0.7,
-                )
-                log.info("LLM initialised (gpt-4-turbo)")
-            except Exception as exc:
-                log.warning("LLM init failed: %s — using keyword extraction", exc)
-        else:
-            log.info("No OpenAI key — using keyword extraction")
+        self.client = client  # shared: Anthropic or OpenAI, or None
+        if self.client:
+            log.info("LLM extraction enabled")
 
     def process_transcript(self, transcript: str, meta: CallMetadata) -> AgentResponse:
-        if self.llm:
+        if self.client:
             try:
                 return self._llm_extract(transcript, meta)
             except Exception as exc:
@@ -160,35 +161,70 @@ class LeadCaptureAgent:
         return self._keyword_extract(transcript, meta)
 
     def _llm_extract(self, transcript: str, meta: CallMetadata) -> AgentResponse:
-        tools = [extract_contact_info, classify_service_type,
-                 assess_urgency, save_lead_to_database]
-        prompt = ChatPromptTemplate.from_messages([
-            ("system",
-             "You are an AI assistant for a home services company. "
-             "A customer called. Extract: service type, urgency, name, address. "
-             "Be concise."),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
-        agent = create_tool_calling_agent(self.llm, tools, prompt)
-        executor = AgentExecutor(agent=agent, tools=tools, verbose=False, max_iterations=3)
-        executor.invoke({
-            "input": f'Transcript: "{transcript}"  Phone: {meta.from_phone}'
+        system_prompt = (
+            "You extract job details from a home-services customer call transcript. "
+            "Return ONLY JSON with keys: service_type (plumbing|hvac|electrical|unknown), "
+            "urgency (emergency|routine|scheduling), customer_name (string or null), "
+            "address (string or null), problem_description (short summary). "
+            'Example: {"service_type": "plumbing", "urgency": "emergency", '
+            '"customer_name": "Sarah Chen", "address": "482 Maple Ave", '
+            '"problem_description": "Kitchen sink leaking, water on floor"}'
+        )
+        user_content = f'Transcript: "{transcript}"'
+
+        if ANTHROPIC_API_KEY:
+            resp = self.client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=300,
+                temperature=0,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            raw = resp.content[0].text if resp.content else "{}"
+        else:
+            resp = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                max_tokens=300,
+            )
+            raw = resp.choices[0].message.content or "{}"
+
+        data = json.loads(raw)
+
+        svc = data.get("service_type") or classify_service_type(transcript)
+        urg = data.get("urgency") or assess_urgency(transcript)
+        if svc not in ("plumbing", "hvac", "electrical", "unknown"):
+            svc = classify_service_type(transcript)
+        if urg not in ("emergency", "routine", "scheduling"):
+            urg = assess_urgency(transcript)
+        name = data.get("customer_name") or "Caller"
+        addr = data.get("address") or "(ask caller to confirm)"
+        problem = data.get("problem_description") or transcript
+
+        save_lead_to_database({
+            "service_type": svc,
+            "urgency": urg,
+            "customer_phone": meta.from_phone,
+            "customer_name": name,
+            "address": addr,
         })
-        svc = classify_service_type(transcript)
-        urg = assess_urgency(transcript)
         return AgentResponse(
             next_question="Can you confirm your address?",
             job_details=JobDetail(
                 service_type=svc,
-                problem_description=transcript,
+                problem_description=problem,
                 urgency=urg,
-                address="(LLM extracted)",
-                customer_name="Caller",
+                address=addr,
+                customer_name=name,
                 customer_phone=meta.from_phone,
             ),
             needs_human_handoff=(urg == "emergency"),
-            confidence=0.85,
+            confidence=0.92,
         )
 
     def _keyword_extract(self, transcript: str, meta: CallMetadata) -> AgentResponse:
@@ -321,7 +357,7 @@ async def health_check():
     return {
         "status": "ok",
         "service": "Hermes Lead Capture Agent",
-        "llm_available": lead_agent.llm is not None,
+        "llm_available": lead_agent.client is not None,
         "timestamp": datetime.now().isoformat(),
     }
 
