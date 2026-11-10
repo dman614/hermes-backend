@@ -248,6 +248,7 @@ class LeadCaptureAgent:
             "customer_phone": meta.from_phone,
             "customer_name": name,
             "address": addr,
+            "problem_description": problem,
         })
         return AgentResponse(
             next_question="Can you confirm your address?",
