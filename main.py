@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from db import db
 from quote_agent import generate_quote, set_quote_status
 from schedule_agent import schedule_job
+from billing_agent import generate_invoice, record_payment, run_followups, find_overdue
 
 load_dotenv()
 
@@ -499,6 +500,35 @@ async def get_appointments(job_id: int):
     """Appointments for a job."""
     appts = db.list_appointments(job_id=job_id)
     return {"job_id": job_id, "appointments": appts, "count": len(appts)}
+
+@app.post("/api/jobs/{job_id}/invoice")
+async def invoice_job(job_id: int, total: float = 0):
+    """Billing Agent: generate an invoice for a job (uses quote amount by default)."""
+    try:
+        result = generate_invoice(job_id, total=total if total else None)
+        return {"success": True, **result}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+@app.post("/api/invoices/{invoice_id}/pay")
+async def pay_invoice(invoice_id: int, amount: float = 0):
+    """Record payment against an invoice."""
+    try:
+        result = record_payment(invoice_id, amount=amount if amount else None)
+        return {"success": True, **result}
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+
+@app.get("/api/invoices/overdue")
+async def overdue(days: int = 3):
+    """Invoices needing payment reminders."""
+    items = find_overdue(days)
+    return {"overdue": items, "count": len(items)}
+
+@app.post("/api/followups/run")
+async def run_followups_endpoint():
+    """Nightly follow-up pass (reminders + review requests)."""
+    return run_followups()
 
 # ---------------------------------------------------------------------------
 # Run

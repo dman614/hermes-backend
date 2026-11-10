@@ -313,5 +313,54 @@ class Database:
             rows = conn.execute(sql, params).fetchall()
         return [self._serialize(r) for r in rows]
 
+    # ------------------------------------------------------------------
+    # Invoices / Payments
+    # ------------------------------------------------------------------
+    def create_invoice(self, job_id: int, total: float, status: str = "sent") -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO invoices (job_id, total, status)
+                VALUES (%s, %s, %s) RETURNING id, job_id, total, status, created_at
+                """,
+                (job_id, total, status),
+            ).fetchone()
+        return self._serialize(row)
+
+    def get_invoice(self, invoice_id: int) -> dict:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM invoices WHERE id = %s", (invoice_id,)).fetchone()
+        return self._serialize(row) if row else {}
+
+    def get_invoice_for_job(self, job_id: int) -> dict:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM invoices WHERE job_id = %s ORDER BY created_at DESC LIMIT 1",
+                (job_id,),
+            ).fetchone()
+        return self._serialize(row) if row else {}
+
+    def mark_invoice_paid(self, invoice_id: int, amount: float) -> bool:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE invoices SET status = 'paid', paid_amount = %s,
+                                    paid_at = now() WHERE id = %s
+                """,
+                (amount, invoice_id),
+            )
+            return cur.rowcount > 0
+
+    def overdue_invoices(self, days: int = 3) -> list:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM invoices
+                WHERE status = 'sent' AND created_at < now() - make_interval(days => %s)
+                """,
+                (days,),
+            ).fetchall()
+        return [self._serialize(r) for r in rows]
+
 
 db = Database()
