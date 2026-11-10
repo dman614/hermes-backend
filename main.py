@@ -18,6 +18,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+from db import db
+
 load_dotenv()
 
 # ---------------------------------------------------------------------------
@@ -133,14 +135,21 @@ def extract_contact_info(transcript: str, phone: str) -> dict:
     }
 
 def save_lead_to_database(job_details: dict) -> dict:
-    """Save the extracted lead. (Placeholder — Week 2: PostgreSQL.)"""
-    job_id = f"JOB-{datetime.now().timestamp():.0f}"
-    log.info("Lead saved: %s  service=%s  urgency=%s  phone=%s",
-             job_id,
-             job_details.get("service_type"),
-             job_details.get("urgency"),
-             job_details.get("customer_phone"))
-    return {"job_id": job_id, "status": "saved", "timestamp": datetime.now().isoformat()}
+    """Save the extracted lead to PostgreSQL (the central jobs table)."""
+    job = db.create_job({
+        "job_ref": f"JOB-{int(datetime.now().timestamp())}",
+        "customer_name": job_details.get("customer_name"),
+        "customer_phone": job_details.get("customer_phone"),
+        "customer_address": job_details.get("address"),
+        "service_type": job_details.get("service_type"),
+        "urgency": job_details.get("urgency"),
+        "problem_description": job_details.get("problem_description"),
+        "status": "incoming",
+        "source": "phone",
+    })
+    return {"job_id": job.get("id"), "job_ref": job.get("job_ref"),
+            "status": job.get("status", "saved"),
+            "timestamp": datetime.now().isoformat()}
 
 # ---------------------------------------------------------------------------
 # Lead Capture Agent
@@ -277,6 +286,9 @@ class LeadCaptureAgent:
         )
 
 lead_agent = LeadCaptureAgent()
+
+# Initialise the database schema at startup (no-op if DATABASE_URL unset)
+db.init_schema()
 
 # ---------------------------------------------------------------------------
 # Twilio webhook endpoints
@@ -424,8 +436,10 @@ async def test_transcript(request: Request):
     }
 
 @app.get("/api/jobs")
-async def list_jobs():
-    return {"jobs": [], "note": "Database integration coming in a future release"}
+async def list_jobs(status: str = "", limit: int = 50):
+    """List captured leads/jobs from PostgreSQL."""
+    jobs = db.list_jobs(limit=limit, status=status)
+    return {"jobs": jobs, "count": len(jobs), "database": db.available}
 
 # ---------------------------------------------------------------------------
 # Run

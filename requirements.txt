@@ -10,3 +10,6 @@ openai==1.55.0
 anthropic==0.40.0
 # httpx 0.28 broke the proxies kwarg that openai<=1.55 passes; pin the last compatible
 httpx==0.27.2
+
+# PostgreSQL (central hub: jobs, quotes, technicians, appointments, invoices)
+psycopg[binary]==3.2.3
