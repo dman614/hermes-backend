@@ -146,6 +146,32 @@ def save_lead_to_database(job_details: dict) -> dict:
 # Lead Capture Agent
 # ---------------------------------------------------------------------------
 
+def _parse_json_response(raw: str) -> dict:
+    """Parse an LLM JSON response, tolerating markdown fences, prose, and
+    leading/trailing junk that some models emit around the JSON block."""
+    if not raw:
+        return {}
+    text = raw.strip()
+    # Strip ```json ... ``` fences
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    # Find the first { ... } block if surrounding prose exists
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        log.warning("LLM returned non-JSON response: %r", raw[:200])
+        return {}
+
 class LeadCaptureAgent:
     def __init__(self):
         self.client = client  # shared: Anthropic or OpenAI, or None
@@ -180,7 +206,9 @@ class LeadCaptureAgent:
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_content}],
             )
-            raw = resp.content[0].text if resp.content else "{}"
+            raw = (resp.content[0].text
+                   if resp.content and getattr(resp.content[0], "text", None)
+                   else "{}")
         else:
             resp = self.client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -193,8 +221,7 @@ class LeadCaptureAgent:
                 max_tokens=300,
             )
             raw = resp.choices[0].message.content or "{}"
-
-        data = json.loads(raw)
+        data = _parse_json_response(raw)
 
         svc = data.get("service_type") or classify_service_type(transcript)
         urg = data.get("urgency") or assess_urgency(transcript)
