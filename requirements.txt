@@ -6,5 +6,5 @@ python-dotenv==1.0.0
 pydantic==2.5.0
 
 # LangChain (optional — agent runs in keyword mode without these)
-langchain==0.1.0
-langchain-openai==0.0.3
+langchain==0.2.16
+langchain-openai==0.1.25
