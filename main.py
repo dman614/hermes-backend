@@ -323,12 +323,12 @@ async def handle_incoming_call(request: Request):
     action = _recording_action_url()
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="alice">Hi! Thanks for calling Comox Valley Home Services.
+    <Say voice="Polly.Matthew" language="en-US">Hi! Thanks for calling Comox Valley Home Services.
          Please tell us what you need — plumbing, H-V-A-C, or electrical —
          and describe the problem after the beep.</Say>
     <Record maxLength="120" action="{action}" method="POST"
             transcribe="true" transcribeCallback="{action}" />
-    <Say voice="alice">We did not receive a recording. Goodbye.</Say>
+    <Say voice="Polly.Matthew" language="en-US">We did not receive a recording. Goodbye.</Say>
 </Response>"""
     return Response(content=twiml, media_type="application/xml")
 
@@ -370,7 +370,7 @@ async def handle_recording(request: Request):
 
         twiml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="alice">Thanks for that information!
+    <Say voice="Polly.Matthew" language="en-US">Thanks for that information!
          A technician will call you back within 30 minutes. Goodbye!</Say>
     <Hangup />
 </Response>"""
@@ -381,7 +381,7 @@ async def handle_recording(request: Request):
         return Response(
             content="""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say>Sorry, there was an error. Please try again later.</Say>
+    <Say voice="Polly.Matthew" language="en-US">Sorry, there was an error. Please try again later.</Say>
     <Hangup />
 </Response>""",
             media_type="application/xml",
