@@ -22,6 +22,7 @@ from db import db
 from quote_agent import generate_quote, set_quote_status
 from schedule_agent import schedule_job
 from billing_agent import generate_invoice, record_payment, run_followups, find_overdue
+from invoice_view import render_invoice_html
 
 load_dotenv()
 
@@ -514,6 +515,22 @@ async def invoice_job(job_id: int, total: float = 0):
         return {"success": True, **result}
     except ValueError as exc:
         return {"success": False, "error": str(exc)}
+
+@app.get("/api/invoices/{invoice_id}")
+async def get_invoice(invoice_id: int):
+    """Invoice data joined with its job."""
+    inv = db.get_invoice_with_job(invoice_id)
+    if not inv:
+        return {"success": False, "error": f"Invoice {invoice_id} not found"}
+    return {"success": True, "invoice": inv}
+
+@app.get("/invoices/{invoice_id}")
+async def invoice_page(invoice_id: int):
+    """Print-ready HTML invoice (browser print = PDF)."""
+    inv = db.get_invoice_with_job(invoice_id)
+    if not inv:
+        return Response(content="Invoice not found", status_code=404)
+    return Response(content=render_invoice_html(inv), media_type="text/html")
 
 @app.post("/api/invoices/{invoice_id}/pay")
 async def pay_invoice(invoice_id: int, amount: float = 0):

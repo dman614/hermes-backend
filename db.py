@@ -340,6 +340,21 @@ class Database:
             ).fetchone()
         return self._serialize(row) if row else {}
 
+    def get_invoice_with_job(self, invoice_id: int) -> dict:
+        """Invoice joined with its job (customer, service, address)."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT i.*, j.customer_name, j.customer_phone, j.customer_address,
+                       j.service_type, j.urgency, j.problem_description,
+                       j.quote_amount
+                FROM invoices i JOIN jobs j ON j.id = i.job_id
+                WHERE i.id = %s
+                """,
+                (invoice_id,),
+            ).fetchone()
+        return self._serialize(row) if row else {}
+
     def mark_invoice_paid(self, invoice_id: int, amount: float) -> bool:
         with self.connect() as conn:
             cur = conn.execute(
