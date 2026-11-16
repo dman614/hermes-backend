@@ -32,6 +32,20 @@ def render_invoice_html(inv: dict) -> str:
 
     status_badge = "PAID" if paid else "SENT"
 
+    # Build conditional rows as plain strings BEFORE the f-string template
+    # (f-strings on Python 3.11 cannot nest double quotes in expressions).
+    paid_row = (
+        f"<tr><td>Amount paid</td><td class='num'>-${paid_amount:.2f}</td></tr>"
+        if paid_amount else "")
+    balance_row = (
+        f"<tr class='grand'><td>Balance</td><td class='num'>${balance:.2f}</td></tr>"
+        if not paid else "")
+    payment_note = "" if paid else """
+  <div class="paid-note">
+    Payment can be arranged by phone at (778) 909-4293.
+    Thank you for your business.
+  </div>"""
+
     name = e(inv.get("customer_name") or "Customer")
     address = e(inv.get("customer_address") or "")
     phone = e(inv.get("customer_phone") or "")
@@ -104,15 +118,11 @@ def render_invoice_html(inv: dict) -> str:
     <tr class="total"><td>Subtotal</td><td class="num">${subtotal:.2f}</td></tr>
     <tr><td>GST ({TAX_RATE:.0%})</td><td class="num">${tax:.2f}</td></tr>
     <tr class="grand"><td>Total due</td><td class="num">${total:.2f}</td></tr>
-    {"<tr><td>Amount paid</td><td class='num'>−$%.2f</td></tr>" % paid_amount if paid_amount else ""}
-    {"<tr class='grand'><td>Balance</td><td class='num'>$%.2f</td></tr>" % balance if not paid else ""}
+    {paid_row}
+    {balance_row}
   </table>
 
-  {"" if paid else f"""
-  <div class="paid-note">
-    Payment can be arranged by phone at (778) 909-4293.
-    Thank you for your business.
-  </div>"""}
+  {payment_note}
 
   <div class="foot">
     Invoice #{inv_id} • Comox Valley Home Services • Questions? Call (778) 909-4293
