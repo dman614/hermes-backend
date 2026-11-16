@@ -10,6 +10,7 @@ until the notification channel (Twilio Messaging) is wired in.
 import logging
 
 from db import db
+from sms import send_invoice_notice, send_payment_confirmation, send_sms
 
 log = logging.getLogger("hermes.billing")
 
@@ -26,6 +27,7 @@ def generate_invoice(job_id: int, total: float | None = None) -> dict:
 
     invoice = db.create_invoice(job_id, float(amount), status="sent")
     db.update_job(job_id, {"status": "invoiced", "invoice_id": invoice["id"]})
+    sms = send_invoice_notice(job.get("customer_phone"), invoice["id"], float(amount))
     log.info("Invoice created: #%s for job %s ($%.2f)",
              invoice["id"], job_id, amount)
     return {
@@ -33,8 +35,8 @@ def generate_invoice(job_id: int, total: float | None = None) -> dict:
         "customer_name": job.get("customer_name"),
         "service_type": job.get("service_type"),
         "amount": float(amount),
-        "next_step": "Send invoice + payment link to customer",
-        "delivery": "stubbed (Twilio Messaging not wired)",
+        "customer_sms": sms,
+        "next_step": "Payment link integration (Stripe) coming later",
     }
 
 
@@ -46,10 +48,14 @@ def record_payment(invoice_id: int, amount: float | None = None) -> dict:
     paid = amount if amount is not None else float(invoice["total"])
     ok = db.mark_invoice_paid(invoice_id, paid)
     job_id = invoice["job_id"]
+    sms = {"sent": False, "error": "invoice update failed"}
     if ok:
+        job = db.get_job(job_id)
         db.update_job(job_id, {"status": "paid"})
+        sms = send_payment_confirmation(
+            (job or {}).get("customer_phone"), invoice_id, paid)
     return {"invoice_id": invoice_id, "paid": ok, "amount": paid,
-            "job_id": job_id}
+            "job_id": job_id, "customer_sms": sms}
 
 
 def find_overdue(days: int = 3) -> list:
@@ -63,11 +69,15 @@ def find_overdue(days: int = 3) -> list:
 def run_followups(days: int = 3) -> dict:
     """Nightly job: remind on overdue, ask for review on recently paid."""
     overdue = find_overdue(days)
+    reminders = []
     for item in overdue:
-        log.info("REMINDER due for invoice #%s (job %s, $%.2f)",
-                 item["invoice_id"], item["job_id"], item["total"])
+        job = db.get_job(item["job_id"] or 0) or {}
+        sms = send_sms(job.get("customer_phone"),
+                       f"Friendly reminder from Comox Valley Home Services: "
+                       f"invoice #{item['invoice_id']} for ${item['total']:.2f} "
+                       f"is {days}+ days past due. Call us to arrange payment.")
+        reminders.append({**item, "sms": sms})
     # Review requests would query recently-paid invoices here (stubbed).
-    return {"reminders_due": len(overdue),
-            "reminders": overdue,
-            "reviews_requested": 0,
-            "delivery": "stubbed"}
+    return {"reminders_due": len(reminders),
+            "reminders": reminders,
+            "reviews_requested": 0}

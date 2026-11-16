@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, time as dtime
 
 from db import db
+from sms import send_customer_confirmation, send_technician_job_card
 
 log = logging.getLogger("hermes.schedule")
 
@@ -75,6 +76,14 @@ def schedule_job(job_id: int, when: str = "", technician_id: int = 0) -> dict:
                            "appointment_at": scheduled_at.isoformat(),
                            "technician_id": chosen["id"]})
 
+    when_display = scheduled_at.strftime("%a %b %-d at %-I:%M %p")
+    sms_customer = send_customer_confirmation(
+        job.get("customer_phone"), chosen["name"], when_display)
+    sms_tech = send_technician_job_card(
+        chosen.get("phone"), chosen["name"], job.get("job_ref"),
+        service_type, job.get("customer_address") or "(address on file)",
+        when_display)
+
     log.info("Job %s scheduled: tech %s at %s", job_id, chosen["name"], scheduled_at)
     return {
         "success": True,
@@ -83,5 +92,5 @@ def schedule_job(job_id: int, when: str = "", technician_id: int = 0) -> dict:
                        "specialties": chosen.get("specialties", [])},
         "when": scheduled_at.isoformat(),
         "job_status": "scheduled",
-        "next_step": "Customer + technician SMS confirmations (Week 4.5)",
+        "notifications": {"customer_sms": sms_customer, "technician_sms": sms_tech},
     }
