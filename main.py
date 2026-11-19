@@ -15,6 +15,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -78,6 +79,9 @@ app = FastAPI(
     description="AI agent that answers phone calls and captures job details",
     version="0.2.0",
 )
+
+# Pre-recorded ElevenLabs voice clips (greeting, prompts) for Twilio <Play>
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -322,14 +326,13 @@ async def handle_incoming_call(request: Request):
         pass
 
     action = _recording_action_url()
+    base = BASE_URL.rstrip('/') if BASE_URL else ""
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Matthew" language="en-US">Hi! Thanks for calling Comox Valley Home Services.
-         Please tell us what you need — plumbing, H-V-A-C, or electrical —
-         and describe the problem after the beep.</Say>
+    <Play>{base}/static/audio/greeting.mp3</Play>
     <Record maxLength="120" action="{action}" method="POST"
             transcribe="true" transcribeCallback="{action}" />
-    <Say voice="Polly.Matthew" language="en-US">We did not receive a recording. Goodbye.</Say>
+    <Play>{base}/static/audio/no_recording.mp3</Play>
 </Response>"""
     return Response(content=twiml, media_type="application/xml")
 
@@ -371,10 +374,9 @@ async def handle_recording(request: Request):
 
         twiml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Matthew" language="en-US">Thanks for that information!
-         A technician will call you back within 30 minutes. Goodbye!</Say>
+    <Play>%s/static/audio/thank_you.mp3</Play>
     <Hangup />
-</Response>"""
+</Response>""" % (BASE_URL.rstrip('/') if BASE_URL else "")
         return Response(content=twiml, media_type="application/xml")
 
     except Exception as exc:
@@ -382,9 +384,9 @@ async def handle_recording(request: Request):
         return Response(
             content="""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Matthew" language="en-US">Sorry, there was an error. Please try again later.</Say>
+    <Play>%s/static/audio/sorry.mp3</Play>
     <Hangup />
-</Response>""",
+</Response>""" % (BASE_URL.rstrip('/') if BASE_URL else ""),
             media_type="application/xml",
         )
 
