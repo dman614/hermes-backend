@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ from quote_agent import generate_quote, set_quote_status
 from schedule_agent import schedule_job
 from billing_agent import generate_invoice, record_payment, run_followups, find_overdue
 from invoice_view import render_invoice_html
+from voice_bridge import register_end_callback, handle_twilio_stream
 
 load_dotenv()
 
@@ -300,6 +301,58 @@ lead_agent = LeadCaptureAgent()
 db.init_schema()
 
 # ---------------------------------------------------------------------------
+# Live voice: Twilio WS <-> ElevenLabs
+# ---------------------------------------------------------------------------
+@app.websocket("/ws/live-call")
+async def live_call(ws: WebSocket):
+    """Twilio connects here (via <Connect><Stream>); we bridge to ElevenLabs."""
+    await ws.accept()
+    try:
+        await handle_twilio_stream(ws)
+    except WebSocketDisconnect:
+        log.info("Twilio WS disconnected")
+    except Exception as exc:
+        log.error("Live call bridge error: %s", exc)
+    finally:
+        try:
+            await ws.close()
+        except Exception:
+            pass
+
+
+def conversation_to_lead(result: dict):
+    """Persist a finished ElevenLabs conversation as a job (via Claude extraction)."""
+    try:
+        transcript = ""
+        trans = result.get("transcript")
+        if isinstance(trans, list):
+            transcript = "\n".join(
+                f"{t.get('role','')}: {t.get('message','')}" for t in trans if t.get("message"))
+        elif isinstance(trans, str):
+            transcript = trans
+        if not transcript:
+            transcript = "\n".join(result.get("_stream_transcript", []) or [])
+        if not transcript:
+            log.info("Conversation ended with no transcript (likely short/abandoned call)")
+            return
+
+        meta = CallMetadata(
+            call_sid=result.get("conversation_id") or "LIVE",
+            from_phone=result.get("metadata", {}).get("caller_number") or "unknown",
+            to_phone="+17789094293",
+            call_status="completed",
+            timestamp=datetime.now().isoformat(),
+        )
+        resp = lead_agent.process_transcript(transcript, meta)
+        log.info("Live call lead: service=%s urgency=%s conf=%.2f",
+                 resp.job_details.service_type, resp.job_details.urgency, resp.confidence)
+    except Exception as exc:
+        log.error("conversation_to_lead failed: %s", exc)
+
+
+register_end_callback(conversation_to_lead)
+
+# ---------------------------------------------------------------------------
 # Twilio webhook endpoints
 # ---------------------------------------------------------------------------
 
@@ -315,7 +368,8 @@ def _recording_action_url() -> str:
 async def handle_incoming_call(request: Request):
     """
     Twilio webhook: a customer is calling.
-    Respond with TwiML that greets and records.
+    With ElevenLabs configured: Connect to the live voice bridge (two-way AI call).
+    Otherwise: fall back to the classic greeting + voicemail recording flow.
     """
     try:
         form_data = await request.form()
@@ -324,6 +378,20 @@ async def handle_incoming_call(request: Request):
         log.info("Incoming call: %s -> %s", from_phone, to_phone)
     except Exception:
         pass
+
+    ws_url = "wss://" + (BASE_URL or "").rstrip('/').split("//")[-1] if BASE_URL else ""
+    ws_url = f"{ws_url}/ws/live-call" if ws_url else "/ws/live-call"
+
+    if os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_AGENT_ID"):
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="{ws_url}">
+            <Parameter name="Track" value="both_tracks" />
+        </Stream>
+    </Connect>
+</Response>"""
+        return Response(content=twiml, media_type="application/xml")
 
     action = _recording_action_url()
     base = BASE_URL.rstrip('/') if BASE_URL else ""

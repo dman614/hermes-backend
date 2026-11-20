@@ -13,3 +13,6 @@ httpx==0.27.2
 
 # PostgreSQL (central hub: jobs, quotes, technicians, appointments, invoices)
 psycopg[binary]==3.2.3
+
+# WebSockets client (ElevenLabs live voice bridge)
+websockets==12.0
