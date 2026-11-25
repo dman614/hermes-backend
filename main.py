@@ -364,35 +364,52 @@ def _recording_action_url() -> str:
     return "/webhook/call/recording"
 
 
+def _elevenlabs_register_call(from_number: str, to_number: str) -> str:
+    """Register the call with ElevenLabs' Twilio integration; returns TwiML.
+
+    ElevenLabs operates the Twilio MediaStreams bridge server-side, so no
+    WebSocket bridge is needed here - the returned TwiML points Twilio's
+    media at ElevenLabs' own endpoint.
+    """
+    try:
+        from elevenlabs import ElevenLabs
+        client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY", ""))
+        twiml = client.conversational_ai.twilio.register_call(
+            agent_id=os.getenv("ELEVENLABS_AGENT_ID", ""),
+            from_number=from_number,
+            to_number=to_number,
+            direction="inbound",
+        )
+        return twiml
+    except Exception as exc:
+        log.error("register_call failed: %s", exc)
+        return ""
+
+
 @app.post("/webhook/call")
 @app.post("/api/calls/incoming")
 async def handle_incoming_call(request: Request):
     """
     Twilio webhook: a customer is calling.
-    With ElevenLabs configured: Connect to the live voice bridge (two-way AI call).
-    Otherwise: fall back to the classic greeting + voicemail recording flow.
+    With ElevenLabs configured: register the call with their Twilio
+    integration (they run the media bridge) and return their TwiML.
+    Otherwise: fall back to the classic greeting + voicemail flow.
     """
+    from_number = "unknown"
+    to_number = "unknown"
     try:
         form_data = await request.form()
-        from_phone = form_data.get("From", "unknown")
-        to_phone = form_data.get("To", "unknown")
-        log.info("Incoming call: %s -> %s", from_phone, to_phone)
+        from_number = str(form_data.get("From", "unknown"))
+        to_number = str(form_data.get("To", "unknown"))
+        log.info("Incoming call: %s -> %s", from_number, to_number)
     except Exception:
         pass
 
-    ws_url = "wss://" + (BASE_URL or "").rstrip('/').split("//")[-1] if BASE_URL else ""
-    ws_url = f"{ws_url}/ws/live-call" if ws_url else "/ws/live-call"
-
     if os.getenv("ELEVENLABS_API_KEY") and os.getenv("ELEVENLABS_AGENT_ID"):
-        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Connect>
-        <Stream url="{ws_url}">
-            <Parameter name="Track" value="both_tracks" />
-        </Stream>
-    </Connect>
-</Response>"""
-        return Response(content=twiml, media_type="application/xml")
+        twiml = _elevenlabs_register_call(from_number, to_number)
+        if twiml:
+            log.info("ElevenLabs taking the call (register_call OK)")
+            return Response(content=twiml, media_type="application/xml")
 
     action = _recording_action_url()
     base = BASE_URL.rstrip('/') if BASE_URL else ""
