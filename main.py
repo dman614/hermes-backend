@@ -483,7 +483,7 @@ async def health_check():
 
 @app.get("/debug/bridge")
 async def debug_bridge():
-    """Diagnose the ElevenLabs leg from inside Render's network."""
+    """Diagnose the ElevenLabs leg + full bridge from inside Render's network."""
     import asyncio as _asyncio
     import websockets as _ws
     async def probe():
@@ -498,9 +498,51 @@ async def debug_bridge():
             return {"ok": False, "step": "connect", "error": str(exc)[:300]}
         try:
             msg = await _asyncio.wait_for(conn.recv(), timeout=10)
-            return {"ok": True, "step": "recv_meta", "got": msg[:200]}
+            got = msg[:200]
         except Exception as exc:
             return {"ok": False, "step": "recv", "error": str(exc)[:300]}
+
+        # Now exercise the full bridge handler with a fake Twilio, capturing errors
+        import base64 as _b64
+        import json as _json
+        result_box = {"error": None, "frames": 0}
+
+        class FakeTwilio:
+            def __init__(self):
+                self.i = 0
+                self.events = [
+                    {"event": "start", "streamSid": "DBG1"},
+                    {"event": "media", "media": {"payload": _b64.b64encode(b"\xff" * 1600).decode()}},
+                    {"event": "media", "media": {"payload": _b64.b64encode(b"\xff" * 1600).decode()}},
+                    {"event": "media", "media": {"payload": _b64.b64encode(b"\xff" * 1600).decode()}},
+                ]
+            def __aiter__(self):
+                return self
+            async def __anext__(self):
+                if self.i < len(self.events):
+                    ev = self.events[self.i]
+                    self.i += 1
+                    return _json.dumps(ev)
+                await _asyncio.sleep(25)
+                raise StopAsyncIteration
+            async def send(self, frame):
+                d = _json.loads(frame)
+                if d.get("event") == "media" and d.get("media", {}).get("payload"):
+                    result_box["frames"] += 1
+            async def close(self):
+                pass
+
+        try:
+            from voice_bridge import handle_twilio_stream
+            await _asyncio.wait_for(
+                handle_twilio_stream(FakeTwilio()), timeout=20)
+        except Exception as exc:
+            import traceback
+            result_box["error"] = traceback.format_exc()[-1200:]
+
+        return {"ok": True, "step": "recv_meta", "got": got,
+                "bridge_frames": result_box["frames"],
+                "bridge_error": result_box["error"]}
     result = await probe()
     result["has_api_key"] = bool(ELEVEN_API_KEY)
     result["has_agent_id"] = bool(ELEVEN_AGENT_ID)
