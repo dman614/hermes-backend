@@ -24,8 +24,8 @@ from quote_agent import generate_quote, set_quote_status
 from schedule_agent import schedule_job
 from billing_agent import generate_invoice, record_payment, run_followups, find_overdue
 from invoice_view import render_invoice_html
-from voice_bridge import (register_end_callback, handle_twilio_stream,
-                          ELEVEN_WS_URL, ELEVEN_API_KEY, ELEVEN_AGENT_ID)
+from voice_bridge import register_end_callback, handle_twilio_stream
+from eleven_sync import sync_new_conversations
 
 load_dotenv()
 
@@ -409,6 +409,17 @@ async def handle_incoming_call(request: Request):
         twiml = _elevenlabs_register_call(from_number, to_number)
         if twiml:
             log.info("ElevenLabs taking the call (register_call OK)")
+
+            # The call is now handled by ElevenLabs; poll for the finished
+            # transcript so it lands in the DB and notifies the owner.
+            import asyncio as _asyncio
+
+            async def _sync_loop():
+                for _ in range(10):   # up to ~5 min of polling
+                    await _asyncio.sleep(30)
+                    sync_new_conversations()
+
+            _asyncio.create_task(_sync_loop())
             return Response(content=twiml, media_type="application/xml")
 
     action = _recording_action_url()
@@ -500,70 +511,17 @@ async def health_check():
 
 @app.get("/debug/bridge")
 async def debug_bridge():
-    """Diagnose the ElevenLabs leg + full bridge from inside Render's network."""
-    import asyncio as _asyncio
-    import websockets as _ws
-    async def probe():
-        try:
-            conn = await _ws.connect(
-                ELEVEN_WS_URL,
-                extra_headers={"xi-api-key": ELEVEN_API_KEY},
-                max_size=10 * 1024 * 1024,
-                open_timeout=10,
-            )
-        except Exception as exc:
-            return {"ok": False, "step": "connect", "error": str(exc)[:300]}
-        try:
-            msg = await _asyncio.wait_for(conn.recv(), timeout=10)
-            got = msg[:200]
-        except Exception as exc:
-            return {"ok": False, "step": "recv", "error": str(exc)[:300]}
-
-        # Now exercise the full bridge handler with a fake Twilio, capturing errors
-        import base64 as _b64
-        import json as _json
-        result_box = {"error": None, "frames": 0}
-
-        class FakeTwilio:
-            def __init__(self):
-                self.i = 0
-                self.events = [
-                    {"event": "start", "streamSid": "DBG1"},
-                    {"event": "media", "media": {"payload": _b64.b64encode(b"\xff" * 1600).decode()}},
-                    {"event": "media", "media": {"payload": _b64.b64encode(b"\xff" * 1600).decode()}},
-                    {"event": "media", "media": {"payload": _b64.b64encode(b"\xff" * 1600).decode()}},
-                ]
-            def __aiter__(self):
-                return self
-            async def __anext__(self):
-                if self.i < len(self.events):
-                    ev = self.events[self.i]
-                    self.i += 1
-                    return _json.dumps(ev)
-                await _asyncio.sleep(25)
-                raise StopAsyncIteration
-            async def send(self, frame):
-                d = _json.loads(frame)
-                if d.get("event") == "media" and d.get("media", {}).get("payload"):
-                    result_box["frames"] += 1
-            async def close(self):
-                pass
-
-        try:
-            from voice_bridge import handle_twilio_stream
-            await _asyncio.wait_for(
-                handle_twilio_stream(FakeTwilio()), timeout=20)
-        except Exception as exc:
-            import traceback
-            result_box["error"] = traceback.format_exc()[-1200:]
-
-        return {"ok": True, "step": "recv_meta", "got": got,
-                "bridge_frames": result_box["frames"],
-                "bridge_error": result_box["error"]}
-    result = await probe()
-    result["has_api_key"] = bool(ELEVEN_API_KEY)
-    result["has_agent_id"] = bool(ELEVEN_AGENT_ID)
-    return result
+    """Diagnose the ElevenLabs integration (agent reachable, recent calls)."""
+    import eleven_sync
+    convs = eleven_sync.list_done_conversations(limit=3)
+    return {
+        "has_api_key": bool(os.getenv("ELEVENLABS_API_KEY", "")),
+        "has_agent_id": bool(os.getenv("ELEVENLABS_AGENT_ID", "")),
+        "recent_conversations": [
+            {"id": c.get("conversation_id"), "status": c.get("status")}
+            for c in convs],
+        "ok": True,
+    }
 
 @app.post("/api/test/transcript")
 async def test_transcript(request: Request):
@@ -706,6 +664,12 @@ async def overdue(days: int = 3):
 async def run_followups_endpoint():
     """Nightly follow-up pass (reminders + review requests)."""
     return run_followups()
+
+@app.post("/api/sync/calls")
+async def sync_calls():
+    """Import finished ElevenLabs calls into jobs (+ owner SMS)."""
+    result = sync_new_conversations()
+    return {"success": True, **result}
 
 # ---------------------------------------------------------------------------
 # Run

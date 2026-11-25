@@ -58,6 +58,17 @@ async function j(url, opts) {
   return r.json();
 }
 
+// ISO string ("2026-11-25T23:30:12.43Z" or with +00:00) -> local readable
+function formatTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString([], {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit"
+  });
+}
+
 async function load() {
   const health = await j(API + "/health");
   const dot = document.getElementById("db-dot");
@@ -92,6 +103,11 @@ async function load() {
         <span>📞 ${job.customer_phone || "—"}</span>
         <span>📍 ${job.customer_address || "—"}</span>
         <span>💰 ${job.quote_amount ? "$" + job.quote_amount : "no quote"}</span>
+      </div>
+      <div class="meta">
+        <span>🕐 ${formatTime(job.created_at)}</span>
+        ${job.updated_at ? "<span>✏️ updated " + formatTime(job.updated_at) + "</span>" : ""}
+        ${job.source ? "<span>📲 " + job.source + "</span>" : ""}
       </div>
       <div class="meta">${job.problem_description || ""}</div>
       <div class="actions" data-job="${job.id}"></div>`;
