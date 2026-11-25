@@ -52,11 +52,17 @@ async def handle_twilio_stream(ws_twilio):
             async for raw in ws_eleven:
                 msg = json.loads(raw)
                 mtype = msg.get("type")
+                # ElevenLabs WebSocket event schema (raw API):
+                #   audio_event: {audio_event: {audio_base_64}}
+                #   agent_response_event / user_transcript_event
+                #   conversation_initiation_metadata / _completed
+                #   client_tool_call, ping, interruption
                 if mtype == "conversation_initiation_metadata":
                     conversation_id = msg.get("conversation_id")
                     log.info("ElevenLabs conversation started: %s", conversation_id)
-                elif mtype == "audio":
-                    payload = msg.get("audio", {}).get("chunk")
+                elif mtype == "audio_event" or mtype == "audio":
+                    payload = msg.get("audio_event", {}).get("audio_base_64") \
+                        or msg.get("audio", {}).get("chunk")
                     if payload and stream_sid:
                         frame = json.dumps({
                             "event": "media",
@@ -64,10 +70,16 @@ async def handle_twilio_stream(ws_twilio):
                             "media": {"payload": payload},
                         })
                         await ws_twilio.send(frame)
-                elif mtype in ("user_transcript", "agent_response"):
-                    text = msg.get("text", "")
+                elif mtype in ("user_transcript_event", "agent_response_event",
+                               "user_transcript", "agent_response"):
+                    ev = msg.get(mtype, {})
+                    text = (ev.get("user_transcript") or ev.get("agent_response")
+                            or msg.get("user_transcript_event", {}).get("user_transcript")
+                            or msg.get("agent_response_event", {}).get("agent_response")
+                            or "")
                     if text:
-                        transcript_parts.append(f"{'Caller' if mtype == 'user_transcript' else 'Eric'}: {text}")
+                        speaker = "Caller" if "user_transcript" in mtype else "Eric"
+                        transcript_parts.append(f"{speaker}: {text}")
                 elif mtype == "client_tool_call":
                     # ElevenLabs asks us to run a tool (none defined yet) - clear it.
                     await ws_eleven.send(json.dumps({
@@ -76,11 +88,11 @@ async def handle_twilio_stream(ws_twilio):
                         "result": json.dumps({"status": "ok", "data": None}),
                         "is_error": False,
                     }))
-                elif mtype == "conversation_initiation_completed":
-                    # ready to receive audio
-                    pass
                 elif mtype == "ping":
-                    await ws_eleven.send(json.dumps({"type": "pong", "ping": msg.get("ping")}))
+                    await ws_eleven.send(json.dumps({
+                        "type": "pong",
+                        "event_id": msg.get("ping_event", {}).get("event_id"),
+                    }))
                 elif mtype == "interruption":
                     # caller talked over Eric - forward silence/hangup semantics no-op
                     pass
