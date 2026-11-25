@@ -104,7 +104,7 @@ async def handle_twilio_stream(ws_twilio):
     try:
         ws_eleven = await websockets.connect(
             ELEVEN_WS_URL,
-            additional_headers={"xi-api-key": ELEVEN_API_KEY},
+            extra_headers={"xi-api-key": ELEVEN_API_KEY},
             max_size=10 * 1024 * 1024,
         )
     except Exception as exc:
