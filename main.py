@@ -24,7 +24,8 @@ from quote_agent import generate_quote, set_quote_status
 from schedule_agent import schedule_job
 from billing_agent import generate_invoice, record_payment, run_followups, find_overdue
 from invoice_view import render_invoice_html
-from voice_bridge import register_end_callback, handle_twilio_stream
+from voice_bridge import (register_end_callback, handle_twilio_stream,
+                          ELEVEN_WS_URL, ELEVEN_API_KEY, ELEVEN_AGENT_ID)
 
 load_dotenv()
 
@@ -479,6 +480,31 @@ async def health_check():
         "llm_available": lead_agent.client is not None,
         "timestamp": datetime.now().isoformat(),
     }
+
+@app.get("/debug/bridge")
+async def debug_bridge():
+    """Diagnose the ElevenLabs leg from inside Render's network."""
+    import asyncio as _asyncio
+    import websockets as _ws
+    async def probe():
+        try:
+            conn = await _ws.connect(
+                ELEVEN_WS_URL,
+                extra_headers={"xi-api-key": ELEVEN_API_KEY},
+                max_size=10 * 1024 * 1024,
+                open_timeout=10,
+            )
+        except Exception as exc:
+            return {"ok": False, "step": "connect", "error": str(exc)[:300]}
+        try:
+            msg = await _asyncio.wait_for(conn.recv(), timeout=10)
+            return {"ok": True, "step": "recv_meta", "got": msg[:200]}
+        except Exception as exc:
+            return {"ok": False, "step": "recv", "error": str(exc)[:300]}
+    result = await probe()
+    result["has_api_key"] = bool(ELEVEN_API_KEY)
+    result["has_agent_id"] = bool(ELEVEN_AGENT_ID)
+    return result
 
 @app.post("/api/test/transcript")
 async def test_transcript(request: Request):
