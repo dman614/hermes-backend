@@ -377,5 +377,13 @@ class Database:
             ).fetchall()
         return [self._serialize(r) for r in rows]
 
+    def delete_jobs(self, ids: list) -> int:
+        """Delete jobs by id (and cascade quotes/appointments/invoices)."""
+        if not ids:
+            return 0
+        with self.connect() as conn:
+            cur = conn.execute("DELETE FROM jobs WHERE id = ANY(%s)", (ids,))
+            return cur.rowcount
+
 
 db = Database()

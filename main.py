@@ -671,6 +671,25 @@ async def sync_calls():
     result = sync_new_conversations()
     return {"success": True, **result}
 
+@app.post("/api/jobs/cleanup")
+async def cleanup_jobs(keep_last: int = 10):
+    """Delete test/noise jobs (empty refs, unknown service, abandoned).
+    Keeps genuine entries by default; pass keep_last to adjust."""
+    jobs = db.list_jobs(limit=200)
+    keep = []
+    for j in jobs:
+        service = j.get("service_type") or ""
+        name = j.get("customer_name") or ""
+        ref = j.get("job_ref") or ""
+        # keep: real service_types with names, or conversation imports
+        if service in ("plumbing", "hvac", "electrical") and name not in ("Caller",):
+            keep.append(j["id"])
+        elif ref.startswith("conv_"):
+            keep.append(j["id"])
+    delete_ids = [j["id"] for j in jobs if j["id"] not in keep]
+    deleted = db.delete_jobs(delete_ids) if delete_ids else 0
+    return {"deleted": deleted, "kept": len(keep), "remaining": len(jobs) - deleted}
+
 # ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
