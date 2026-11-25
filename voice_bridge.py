@@ -58,25 +58,54 @@ async def handle_twilio_stream(ws_twilio):
                 #   conversation_initiation_metadata / _completed
                 #   client_tool_call, ping, interruption
                 if mtype == "conversation_initiation_metadata":
-                    conversation_id = msg.get("conversation_id")
+                    # Top-level 'conversation_id' may be absent; it also lives at
+                    # conversation_initiation_metadata_event.conversation_id
+                    conversation_id = (msg.get("conversation_id")
+                                       or msg.get("conversation_initiation_metadata_event", {})
+                                       .get("conversation_id"))
                     log.info("ElevenLabs conversation started: %s", conversation_id)
                 elif mtype == "audio_event" or mtype == "audio":
-                    payload = msg.get("audio_event", {}).get("audio_base_64") \
-                        or msg.get("audio", {}).get("chunk")
+                    ev = msg.get("audio_event") or {}
+                    if not isinstance(ev, dict):
+                        ev = {}
+                    payload = ev.get("audio_base_64")
+                    if not payload:
+                        raw_audio = msg.get("audio")
+                        if isinstance(raw_audio, str):
+                            payload = raw_audio
+                        elif isinstance(raw_audio, dict):
+                            payload = raw_audio.get("chunk")
                     if payload and stream_sid:
                         frame = json.dumps({
                             "event": "media",
                             "streamSid": stream_sid,
                             "media": {"payload": payload},
                         })
-                        await ws_twilio.send(frame)
+                        # Starlette WebSocket.send() takes an ASGI dict, not a
+                        # JSON string; send_text() is the string API.
+                        if hasattr(ws_twilio, "send_text"):
+                            await ws_twilio.send_text(frame)
+                        else:
+                            await ws_twilio.send(frame)
                 elif mtype in ("user_transcript_event", "agent_response_event",
                                "user_transcript", "agent_response"):
-                    ev = msg.get(mtype, {})
-                    text = (ev.get("user_transcript") or ev.get("agent_response")
-                            or msg.get("user_transcript_event", {}).get("user_transcript")
-                            or msg.get("agent_response_event", {}).get("agent_response")
-                            or "")
+                    ev = msg.get(mtype)
+                    if not isinstance(ev, dict):
+                        ev = {}
+                    # nested wrappers may be dicts OR raw strings; never .get on a str
+                    ut_ev = msg.get("user_transcript_event")
+                    ar_ev = msg.get("agent_response_event")
+                    text = ""
+                    if isinstance(ev, dict):
+                        text = ev.get("user_transcript") or ev.get("agent_response") or ""
+                    if not text and isinstance(ut_ev, str):
+                        text = ut_ev
+                    elif not text and isinstance(ut_ev, dict):
+                        text = ut_ev.get("user_transcript") or ""
+                    if not text and isinstance(ar_ev, str):
+                        text = ar_ev
+                    elif not text and isinstance(ar_ev, dict):
+                        text = ar_ev.get("agent_response") or ""
                     if text:
                         speaker = "Caller" if "user_transcript" in mtype else "Eric"
                         transcript_parts.append(f"{speaker}: {text}")
@@ -107,6 +136,9 @@ async def handle_twilio_stream(ws_twilio):
                 elif mtype == "error":
                     log.error("ElevenLabs error: %s", msg)
                     break
+                else:
+                    log.warning("ElevenLabs unhandled msg type=%s keys=%s",
+                                mtype, list(msg.keys()) if isinstance(msg, dict) else type(msg).__name__)
         except Exception as exc:
             log.warning("Eleven->Twilio leg ended: %s", exc)
         finally:
@@ -131,29 +163,55 @@ async def handle_twilio_stream(ws_twilio):
     eleven_task = asyncio.create_task(eleven_to_twilio())
 
     try:
-        async for raw in ws_twilio:
-            data = json.loads(raw)
-            ev = data.get("event")
-            if ev == "connected":
-                continue
-            elif ev == "start":
-                stream_sid = data.get("streamSid")
-                log.info("Twilio stream started: %s", stream_sid)
-                # send an audio_input to prime the agent
-                await ws_eleven.send(json.dumps({
-                    "type": "audio_input",
-                    "audio": {"data": base64.b64encode(b"\x7f" * 640).decode()},
-                }))
-            elif ev == "media":
-                payload = data.get("media", {}).get("payload", "")
-                if payload and not stop.is_set():
+        # Starlette WebSocket: iterate text frames via receive_text()
+        if hasattr(ws_twilio, "receive_text"):  # real FastAPI/Starlette WS
+            while True:
+                raw = await ws_twilio.receive_text()
+                data = json.loads(raw)
+                ev = data.get("event")
+                if ev == "connected":
+                    continue
+                elif ev == "start":
+                    stream_sid = data.get("streamSid")
+                    log.info("Twilio stream started: %s", stream_sid)
+                    # send an audio_input to prime the agent
                     await ws_eleven.send(json.dumps({
                         "type": "audio_input",
-                        "audio": {"data": payload},
+                        "audio": {"data": base64.b64encode(b"\x7f" * 640).decode()},
                     }))
-            elif ev == "stop":
-                log.info("Twilio stream stopped (call over)")
-                break
+                elif ev == "media":
+                    payload = data.get("media", {}).get("payload", "")
+                    if payload and not stop.is_set():
+                        await ws_eleven.send(json.dumps({
+                            "type": "audio_input",
+                            "audio": {"data": payload},
+                        }))
+                elif ev == "stop":
+                    log.info("Twilio stream stopped (call over)")
+                    break
+        else:  # test doubles: object with __aiter__/__anext__
+            async for raw in ws_twilio:
+                data = json.loads(raw)
+                ev = data.get("event")
+                if ev == "connected":
+                    continue
+                elif ev == "start":
+                    stream_sid = data.get("streamSid")
+                    log.info("Twilio stream started: %s", stream_sid)
+                    await ws_eleven.send(json.dumps({
+                        "type": "audio_input",
+                        "audio": {"data": base64.b64encode(b"\x7f" * 640).decode()},
+                    }))
+                elif ev == "media":
+                    payload = data.get("media", {}).get("payload", "")
+                    if payload and not stop.is_set():
+                        await ws_eleven.send(json.dumps({
+                            "type": "audio_input",
+                            "audio": {"data": payload},
+                        }))
+                elif ev == "stop":
+                    log.info("Twilio stream stopped (call over)")
+                    break
     except Exception as exc:
         log.warning("Twilio->Eleven leg ended: %s", exc)
     finally:
