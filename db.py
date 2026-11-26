@@ -122,6 +122,7 @@ class Database:
                                   customer_address, service_type, urgency,
                                   problem_description, status, source)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (job_ref) DO NOTHING
                 RETURNING id, job_ref, status, created_at
                 """,
                 (
@@ -135,6 +136,11 @@ class Database:
                     job.get("status", "incoming"),
                     job.get("source", "phone"),
                 ),
+            ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT id, job_ref, status, created_at FROM jobs WHERE job_ref = %s",
+                (job_ref,),
             ).fetchone()
         log.info("Job created: %s (%s) service=%s urgency=%s",
                  row["job_ref"], row["id"], job.get("service_type"), job.get("urgency"))

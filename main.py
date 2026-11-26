@@ -690,6 +690,12 @@ async def cleanup_jobs(keep_last: int = 10):
     deleted = db.delete_jobs(delete_ids) if delete_ids else 0
     return {"deleted": deleted, "kept": len(keep), "remaining": len(jobs) - deleted}
 
+@app.post("/api/jobs/delete")
+async def delete_jobs_endpoint(job_id: int):
+    """Delete a single job by id (dashboard housekeeping)."""
+    deleted = db.delete_jobs([job_id])
+    return {"deleted": deleted}
+
 # ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
